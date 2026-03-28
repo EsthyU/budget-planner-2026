@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo } from "react";
+import { useState, useCallback, useMemo, useEffect } from "react";
 
 const MONTHS=["March","April","May","June","July","August","September","October","November","December"];
 const MO=["MAR","APR","MAY","JUN","JUL","AUG","SEP","OCT","NOV","DEC"];
@@ -6,6 +6,13 @@ const DEFAULT_RATES={EUR:5.0948,USD:4.3411,GBP:5.8739};
 const sym={RON:" RON",EUR:"€",USD:"$",GBP:"£"};
 const fmtN=(v,c,rates)=>{const n=c==="RON"?v:v/rates[c];const s=Math.abs(n)<0.5?"0":Math.abs(n).toLocaleString("en",{maximumFractionDigits:0});if(c==="RON")return`${n<0?"-":""}${s} RON`;return`${n<0?"-":""}${sym[c]}${s}`;};
 let _id=100;const uid=()=>++_id;
+
+
+// ── Persistence ──
+const STORAGE_KEY = "budget_planner_2026_data";
+const saveData = (data) => { try { window.localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); } catch(e) {} };
+const loadData = () => { try { const d = window.localStorage.getItem(STORAGE_KEY); return d ? JSON.parse(d) : null; } catch(e) { return null; } };
+const clearData = () => { try { window.localStorage.removeItem(STORAGE_KEY); } catch(e) {} };
 
 const INIT_SALARY_GBP=1458.33;
 const mkExp=(id,name,amount)=>({id,name,amount});
@@ -46,22 +53,34 @@ const DelBtn=({onClick})=>(<button onClick={onClick} style={{padding:"2px 8px",b
 const StatusSelect=({value,onChange})=>{const colors={"Not Started":"#64748b","In Progress":"#fbbf24",Done:"#4ade80",Blocked:"#f87171"};return(<select value={value} onChange={e=>onChange(e.target.value)} style={{padding:"5px 8px",borderRadius:6,border:`1px solid ${colors[value]}40`,background:"#0a0f18",color:colors[value],fontSize:11,fontWeight:700,fontFamily:"'Outfit',sans-serif",cursor:"pointer",outline:"none"}}>{Object.keys(colors).map(s=><option key={s}>{s}</option>)}</select>);};
 
 export default function App(){
+  const saved = useMemo(() => loadData(), []);
   const[tab,setTab]=useState("dashboard");
-  const[cur,setCur]=useState("RON");
-  const[rates,setRates]=useState(DEFAULT_RATES);
-  const[salaryGBP,setSalaryGBP]=useState(INIT_SALARY_GBP);
-  const[expenses,setExpenses]=useState(INIT_EXPENSES.map(e=>({...e})));
-  const[debts,setDebts]=useState(INIT_DEBTS.map(d=>({...d,schedule:[...d.schedule]})));
-  const[extraIncome,setExtraIncome]=useState(Array(10).fill(null).map(()=>[0,0,0,0]));
-  const[customIncome,setCustomIncome]=useState([]);
-  const[savings,setSavings]=useState([...INIT_SAVINGS]);
-  const[debtPaid,setDebtPaid]=useState({});
-  const[owedList,setOwedList]=useState(OWED.map(o=>({...o})));
-  const[owedStatus,setOwedStatus]=useState({});
-  const[actionStatus,setActionStatus]=useState({});
-  const[customActions,setCustomActions]=useState([]);
+  const[cur,setCur]=useState(saved?.cur||"RON");
+  const[rates,setRates]=useState(saved?.rates||DEFAULT_RATES);
+  const[salaryGBP,setSalaryGBP]=useState(saved?.salaryGBP??INIT_SALARY_GBP);
+  const[expenses,setExpenses]=useState(saved?.expenses||INIT_EXPENSES.map(e=>({...e})));
+  const[debts,setDebts]=useState(saved?.debts||INIT_DEBTS.map(d=>({...d,schedule:[...d.schedule]})));
+  const[extraIncome,setExtraIncome]=useState(saved?.extraIncome||Array(10).fill(null).map(()=>[0,0,0,0]));
+  const[customIncome,setCustomIncome]=useState(saved?.customIncome||[]);
+  const[savings,setSavings]=useState(saved?.savings||[...INIT_SAVINGS]);
+  const[debtPaid,setDebtPaid]=useState(saved?.debtPaid||{});
+  const[owedList,setOwedList]=useState(saved?.owedList||OWED.map(o=>({...o})));
+  const[owedStatus,setOwedStatus]=useState(saved?.owedStatus||{});
+  const[actionStatus,setActionStatus]=useState(saved?.actionStatus||{});
+  const[customActions,setCustomActions]=useState(saved?.customActions||[]);
   const[selMonth,setSelMonth]=useState(0);
-  const[customMonthlyExp,setCustomMonthlyExp]=useState(Array(10).fill(null).map(()=>[]));
+  const[customMonthlyExp,setCustomMonthlyExp]=useState(saved?.customMonthlyExp||Array(10).fill(null).map(()=>[]));
+  const[showResetConfirm,setShowResetConfirm]=useState(false);
+
+  // Auto-save whenever anything changes
+  useEffect(()=>{
+    const timer = setTimeout(()=>{
+      saveData({cur,rates,salaryGBP,expenses,debts,extraIncome,customIncome,savings,debtPaid,owedList,owedStatus,actionStatus,customActions,customMonthlyExp});
+    }, 300);
+    return ()=>clearTimeout(timer);
+  },[cur,rates,salaryGBP,expenses,debts,extraIncome,customIncome,savings,debtPaid,owedList,owedStatus,actionStatus,customActions,customMonthlyExp]);
+
+  const handleReset = ()=>{ clearData(); window.location.reload(); };
 
   const salaryRON=useMemo(()=>salaryGBP*rates.GBP,[salaryGBP,rates]);
   const totalFixed=useMemo(()=>expenses.reduce((s,e)=>s+e.amount,0),[expenses]);
@@ -266,7 +285,7 @@ export default function App(){
 
     {/* ═══ SETTINGS ═══ */}
     {tab==="settings"&&(<div className="fadeUp" style={{display:"flex",flexDirection:"column",gap:20}}>
-      <Panel glow="#d4a843"><SectionHead icon="◆" gold>Settings & Exchange Rates</SectionHead>
+      <Panel glow="#d4a843"><div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",flexWrap:"wrap",gap:12,marginBottom:16}}><SectionHead icon="◆" gold>Settings & Exchange Rates</SectionHead><div style={{display:"flex",gap:8,alignItems:"center"}}><div style={{fontSize:11,color:"#4ade80",fontWeight:600}}>✓ Auto-saved</div>{showResetConfirm?<div style={{display:"flex",gap:6,alignItems:"center"}}><span style={{fontSize:11,color:"#f87171"}}>Reset ALL data?</span><button onClick={handleReset} style={{padding:"4px 12px",borderRadius:6,border:"none",background:"#f87171",color:"#fff",fontSize:11,fontWeight:700,fontFamily:"'Outfit',sans-serif",cursor:"pointer"}}>Yes, Reset</button><button onClick={()=>setShowResetConfirm(false)} style={{padding:"4px 12px",borderRadius:6,border:"1px solid #2a3a4a",background:"transparent",color:"#64748b",fontSize:11,fontWeight:700,fontFamily:"'Outfit',sans-serif",cursor:"pointer"}}>Cancel</button></div>:<button onClick={()=>setShowResetConfirm(true)} style={{padding:"4px 12px",borderRadius:6,border:"1px solid #2a3a4a",background:"transparent",color:"#64748b",fontSize:11,fontWeight:700,fontFamily:"'Outfit',sans-serif",cursor:"pointer"}}>Reset to Defaults</button>}</div></div>
         <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(280px,1fr))",gap:20}}>
           <div><h4 style={{margin:"0 0 12px",fontSize:12,fontWeight:700,color:"#d4a843",letterSpacing:1,textTransform:"uppercase"}}>Exchange Rates</h4>{[["EUR",rates.EUR],["USD",rates.USD],["GBP",rates.GBP]].map(([c,v])=>(<div key={c} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 0",borderBottom:"1px solid #1a2535"}}><span style={{fontWeight:600}}>1 {c} =</span><div style={{display:"flex",alignItems:"center",gap:4}}><input type="number" value={v} onChange={e=>setRates(p=>({...p,[c]:Number(e.target.value)||1}))} style={{width:90,padding:"5px 8px",borderRadius:6,border:"1px solid #d4a84350",background:"#d4a84312",color:"#d4a843",fontSize:13,fontWeight:700,fontFamily:"'Outfit',sans-serif",textAlign:"right",outline:"none"}}/><span style={{fontSize:12,color:"#64748b"}}>RON</span></div></div>))}</div>
           <div><h4 style={{margin:"0 0 12px",fontSize:12,fontWeight:700,color:"#d4a843",letterSpacing:1,textTransform:"uppercase"}}>Primary Income</h4><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 0",borderBottom:"1px solid #1a2535"}}><span style={{fontWeight:600}}>Salary (GBP)</span><input type="number" value={salaryGBP} onChange={e=>setSalaryGBP(Number(e.target.value)||0)} style={{width:100,padding:"5px 8px",borderRadius:6,border:"1px solid #d4a84350",background:"#d4a84312",color:"#d4a843",fontSize:13,fontWeight:700,fontFamily:"'Outfit',sans-serif",textAlign:"right",outline:"none"}}/></div><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 0"}}><span style={{fontWeight:600}}>= RON</span><span style={{fontWeight:800,color:"#4ade80",fontSize:16}}>{fmtN(salaryRON,"RON",rates)}</span></div></div>
@@ -293,6 +312,6 @@ export default function App(){
     </div>)}
 
     </div>
-    <div style={{textAlign:"center",padding:"20px 32px 32px",borderTop:"1px solid #1a2535"}}><div style={{fontSize:10,color:"#3a3a3a",letterSpacing:2,textTransform:"uppercase"}}>Annual Budget Planner 2026</div></div>
+    <div style={{textAlign:"center",padding:"20px 32px 32px",borderTop:"1px solid #1a2535"}}><div style={{fontSize:10,color:"#3a3a3a",letterSpacing:2,textTransform:"uppercase"}}>Annual Budget Planner 2026 · Auto-saved to this device</div></div>
   </div>);
 }
