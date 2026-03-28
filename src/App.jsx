@@ -107,7 +107,7 @@ export default function App(){
   const addExpense=()=>setExpenses(p=>[...p,{id:"exp_"+uid(),name:"New Expense",amount:0}]);
   const delExpense=(id)=>setExpenses(p=>p.filter(e=>e.id!==id));
   const updateDebt=(id,field,val)=>setDebts(p=>p.map(d=>d.id===id?{...d,[field]:val}:d));
-  const updateDebtSchedule=(id,mi,val)=>setDebts(p=>p.map(d=>{if(d.id!==id)return d;const ns=[...d.schedule];ns[mi]=val;return{...d,schedule:ns,total:ns.reduce((a,b)=>a+b,0)};}));
+  const updateDebtSchedule=(id,mi,val)=>setDebts(p=>p.map(d=>{if(d.id!==id)return d;const ns=[...d.schedule];ns[mi]=val;return{...d,schedule:ns};}));
   const addDebt=()=>setDebts(p=>[...p,{id:"debt_"+uid(),name:"New Debt",total:0,schedule:Array(10).fill(0),deadline:"TBD"}]);
   const delDebt=(id)=>setDebts(p=>p.filter(d=>d.id!==id));
   const toggleDebtPaid=(did,mi)=>setDebtPaid(p=>({...p,[`${did}-${mi}`]:!p[`${did}-${mi}`]}));
@@ -219,9 +219,14 @@ export default function App(){
 
         {/* Debts this month */}
         <h4 style={{margin:"20px 0 8px",fontSize:12,fontWeight:700,color:"#f87171",letterSpacing:1,textTransform:"uppercase"}}>Debt Payments — {MONTHS[selMonth]}</h4>
-        {debts.filter(d=>d.schedule[selMonth]>0).length===0?<div style={{padding:16,background:"#4ade8010",borderRadius:8,textAlign:"center",color:"#4ade80",fontWeight:700}}>🎉 No debt payments this month!</div>
-        :<table><tbody>{debts.filter(d=>d.schedule[selMonth]>0).map((d,i)=>{const ip=debtPaid[`${d.id}-${selMonth}`];return(<tr key={d.id} style={{background:i%2===0?"#f8717108":"transparent",opacity:ip?.4:1}}><Cell style={{textDecoration:ip?"line-through":"none"}}>{d.name}</Cell><Cell align="right" red bold>{f(d.schedule[selMonth])}</Cell><Cell align="center"><button onClick={()=>toggleDebtPaid(d.id,selMonth)} style={{padding:"4px 12px",borderRadius:6,cursor:"pointer",fontSize:10,fontWeight:700,fontFamily:"'Outfit',sans-serif",border:"none",background:ip?"#4ade8030":"#f8717130",color:ip?"#4ade80":"#f87171"}}>{ip?"✓ PAID":"MARK PAID"}</button></Cell></tr>);})}
-        <tr style={{background:"#f8717115"}}><Cell bold red>Total</Cell><Cell align="right" red bold>{f(monthlyDebt(selMonth))}</Cell><Cell/></tr></tbody></table>}
+        <table><tbody>{debts.map((d,i)=>{const v=d.schedule[selMonth];const ip=debtPaid[`${d.id}-${selMonth}`];const left=d.total-d.schedule.reduce((a,val,mi)=>a+(debtPaid[`${d.id}-${mi}`]?val:0),0);return(<tr key={d.id} style={{background:i%2===0?"#f8717108":"transparent",opacity:ip?.5:1}}>
+          <Cell style={{textDecoration:ip&&v>0?"line-through":"none"}}>{d.name}</Cell>
+          <Cell align="right" muted style={{fontSize:11}}>owes {f(left>0?left:0)}</Cell>
+          <td style={{padding:"4px 6px",borderBottom:"1px solid #1e2a3a",textAlign:"right"}}><input type="number" value={v} onChange={e=>updateDebtSchedule(d.id,selMonth,Number(e.target.value)||0)} style={{width:70,padding:"5px 6px",borderRadius:5,border:ip?"1px solid #4ade8040":"1px solid #2a3a4a",background:ip?"#4ade8010":v>0?"#f8717108":"transparent",color:ip?"#4ade80":v>0?"#f87171":"#3a4a5a",fontSize:13,fontWeight:700,textAlign:"right",fontFamily:"'Outfit',sans-serif",outline:"none"}}/></td>
+          <Cell align="center">{v>0&&<button onClick={()=>toggleDebtPaid(d.id,selMonth)} style={{padding:"4px 12px",borderRadius:6,cursor:"pointer",fontSize:10,fontWeight:700,fontFamily:"'Outfit',sans-serif",border:"none",background:ip?"#4ade8030":"#f8717130",color:ip?"#4ade80":"#f87171"}}>{ip?"✓ PAID":"MARK PAID"}</button>}</Cell>
+        </tr>);})}
+        <tr style={{background:"#f8717115"}}><Cell bold red>Total</Cell><Cell/><Cell align="right" red bold>{f(monthlyDebt(selMonth))}</Cell><Cell/></tr></tbody></table>
+        <div style={{marginTop:12,padding:12,background:"#0a0f18",borderRadius:8,border:"1px solid #1a2535",fontSize:12,color:"#64748b"}}>💡 Change any amount to reschedule. Reduce this month and add the balance to next month. Everything auto-saves and recalculates.</div>
       </Panel>
     </div>)}
 
@@ -243,15 +248,17 @@ export default function App(){
     {tab==="debts"&&(<div className="fadeUp" style={{display:"flex",flexDirection:"column",gap:20}}>
       <Panel glow="#f87171"><SectionHead icon="◇">Debt Repayment — Fully Editable</SectionHead>
         <div style={{display:"flex",gap:12,marginBottom:20,flexWrap:"wrap"}}><StatBox icon="◇" label="Original" value={f(totalDebtOrig)} color="#f87171"/><StatBox icon="◈" label="Paid" value={f(totalDebtPaidSoFar)} color="#4ade80"/><StatBox icon="◆" label="Remaining" value={f(totalDebtRemaining)} color="#fbbf24"/></div>
-        <div style={{overflowX:"auto"}}><table><thead><tr><Cell head>Creditor</Cell><Cell head align="right">Total</Cell>{MO.map(m=><Cell head align="center" key={m}>{m}</Cell>)}<Cell head>Deadline</Cell><Cell head/></tr></thead>
-        <tbody>{debts.map((d,i)=>{const paid=d.schedule.reduce((a,v,mi)=>a+(debtPaid[`${d.id}-${mi}`]?v:0),0);const done=paid>=d.total&&d.total>0;return(<tr key={d.id} style={{background:done?"#4ade8008":i%2===0?"#f8717105":"transparent"}}>
+        <div style={{overflowX:"auto"}}><table><thead><tr><Cell head>Creditor</Cell><Cell head align="right">Owed</Cell><Cell head align="right" style={{color:"#4ade80"}}>Paid</Cell><Cell head align="right" style={{color:"#fbbf24"}}>Left</Cell>{MO.map(m=><Cell head align="center" key={m}>{m}</Cell>)}<Cell head>Deadline</Cell><Cell head/></tr></thead>
+        <tbody>{debts.map((d,i)=>{const paid=d.schedule.reduce((a,v,mi)=>a+(debtPaid[`${d.id}-${mi}`]?v:0),0);const scheduled=d.schedule.reduce((a,b)=>a+b,0);const left=d.total-paid;const done=left<=0&&d.total>0;const overScheduled=scheduled>d.total&&d.total>0;return(<tr key={d.id} style={{background:done?"#4ade8008":i%2===0?"#f8717105":"transparent"}}>
           <ETCell value={d.name} onChange={v=>updateDebt(d.id,"name",v)}/>
-          <Cell align="right" red bold>{f(d.total)}</Cell>
-          {d.schedule.map((v,mi)=>{const ip=debtPaid[`${d.id}-${mi}`];return(<td key={mi} style={{padding:"4px 2px",textAlign:"center",borderBottom:"1px solid #1e2a3a"}}>{v>0?(<button onClick={()=>toggleDebtPaid(d.id,mi)} style={{padding:"4px 6px",borderRadius:5,border:"none",cursor:"pointer",fontSize:11,fontWeight:700,fontFamily:"'Outfit',sans-serif",minWidth:50,background:ip?"#4ade8025":"#1a2535",color:ip?"#4ade80":"#60a5fa"}}>{ip?"✓":f(v)}</button>):(<input type="number" value={v} onChange={e=>updateDebtSchedule(d.id,mi,Number(e.target.value)||0)} style={{width:50,padding:"4px",borderRadius:4,border:"1px solid #2a3a4a",background:"transparent",color:"#64748b",fontSize:11,textAlign:"center",fontFamily:"'Outfit',sans-serif",outline:"none"}}/>)}</td>);})}
+          <td style={{padding:"4px 6px",borderBottom:"1px solid #1e2a3a",textAlign:"right"}}><input type="number" value={d.total} onChange={e=>{const nv=Number(e.target.value)||0;updateDebt(d.id,"total",nv);}} style={{width:65,padding:"4px 6px",borderRadius:5,border:"1px solid #f8717140",background:"#f8717108",color:"#f87171",fontSize:12,fontWeight:700,fontFamily:"'Outfit',sans-serif",textAlign:"right",outline:"none"}}/></td>
+          <Cell align="right" green bold>{f(paid)}</Cell>
+          <Cell align="right" bold style={{color:done?"#4ade80":left<0?"#c084fc":"#fbbf24"}}>{done?"✓ CLEAR":f(left)}</Cell>
+          {d.schedule.map((v,mi)=>{const ip=debtPaid[`${d.id}-${mi}`];return(<td key={mi} style={{padding:"4px 2px",textAlign:"center",borderBottom:"1px solid #1e2a3a"}}><div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:2}}><input type="number" value={v} onChange={e=>updateDebtSchedule(d.id,mi,Number(e.target.value)||0)} style={{width:58,padding:"4px",borderRadius:4,border:ip?"1px solid #4ade8040":"1px solid #2a3a4a",background:ip?"#4ade8010":v>0?"#60a5fa08":"transparent",color:ip?"#4ade80":v>0?"#60a5fa":"#3a4a5a",fontSize:12,fontWeight:v>0?700:400,textAlign:"center",fontFamily:"'Outfit',sans-serif",outline:"none"}}/>{v>0&&<button onClick={()=>toggleDebtPaid(d.id,mi)} style={{padding:"1px 8px",borderRadius:3,border:"none",cursor:"pointer",fontSize:9,fontWeight:700,fontFamily:"'Outfit',sans-serif",background:ip?"#4ade8025":"#1a2535",color:ip?"#4ade80":"#64748b",letterSpacing:.5}}>{ip?"PAID ✓":"MARK PAID"}</button>}</div></td>);})}
           <ETCell value={d.deadline} onChange={v=>updateDebt(d.id,"deadline",v)}/>
           <td style={{padding:4,borderBottom:"1px solid #1e2a3a"}}><DelBtn onClick={()=>delDebt(d.id)}/></td>
         </tr>);})}
-        <tr style={{background:"#f8717115"}}><Cell bold red>TOTAL</Cell><Cell align="right" red bold>{f(totalDebtOrig)}</Cell>{MO.map((_,i)=>{const v=debts.reduce((s,d)=>s+d.schedule[i],0);return<Cell key={i} align="center" red bold>{v>0?f(v):"—"}</Cell>;})}
+        <tr style={{background:"#f8717115"}}><Cell bold red>TOTAL</Cell><Cell align="right" red bold>{f(totalDebtOrig)}</Cell><Cell align="right" green bold>{f(totalDebtPaidSoFar)}</Cell><Cell align="right" bold style={{color:"#fbbf24"}}>{f(totalDebtRemaining)}</Cell>{MO.map((_,i)=>{const v=debts.reduce((s,d)=>s+d.schedule[i],0);return<Cell key={i} align="center" red bold>{v>0?f(v):"—"}</Cell>;})}
         <Cell/><Cell/></tr>
         </tbody></table></div>
         <AddBtn onClick={addDebt} label="Add New Debt"/>
