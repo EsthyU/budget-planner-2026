@@ -1,324 +1,210 @@
-import { useState, useCallback, useMemo, useEffect } from "react";
-
-const MONTHS=["March","April","May","June","July","August","September","October","November","December"];
-const MO=["MAR","APR","MAY","JUN","JUL","AUG","SEP","OCT","NOV","DEC"];
-const DEFAULT_RATES={EUR:5.0948,USD:4.3411,GBP:5.8739};
-const sym={RON:" RON",EUR:"€",USD:"$",GBP:"£"};
-const fmtN=(v,c,rates)=>{const n=c==="RON"?v:v/rates[c];const s=Math.abs(n)<0.5?"0":Math.abs(n).toLocaleString("en",{maximumFractionDigits:0});if(c==="RON")return`${n<0?"-":""}${s} RON`;return`${n<0?"-":""}${sym[c]}${s}`;};
-let _id=100;const uid=()=>++_id;
-
-
-// ── Persistence ──
-const STORAGE_KEY = "budget_planner_2026_data";
-const saveData = (data) => { try { window.localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); } catch(e) {} };
-const loadData = () => { try { const d = window.localStorage.getItem(STORAGE_KEY); return d ? JSON.parse(d) : null; } catch(e) { return null; } };
-const clearData = () => { try { window.localStorage.removeItem(STORAGE_KEY); } catch(e) {} };
-
-const INIT_SALARY_GBP=1458.33;
-const mkExp=(id,name,amount)=>({id,name,amount});
-const mkDebt=(id,name,total,schedule,deadline)=>({id,name,total,schedule:[...schedule],deadline});
-const INIT_EXPENSES=[mkExp("worktax","Work Tax (Partner)",1625),mkExp("nails","Nails",310),mkExp("food","Food & Groceries",500),mkExp("klarna","Klarna Payment",370),mkExp("internet","Internet",60),mkExp("netflix","Netflix",55),mkExp("claude","Claude AI",100),mkExp("transport","Transport",200),mkExp("skincare","Skincare & Body Care",150)];
-const INIT_DEBTS=[mkDebt("awede","Pastor Awede",2349,[2349,0,0,0,0,0,0,0,0,0],"ALL March"),mkDebt("a","A",1720,[1400,320,0,0,0,0,0,0,0,0],"Majority Mar, rest Apr"),mkDebt("vivhalf","Vivian (half)",860,[860,0,0,0,0,0,0,0,0,0],"ALL March"),mkDebt("phd","PhD",300,[300,0,0,0,0,0,0,0,0,0],"ALL March"),mkDebt("omotolani","Omotolani (×2)",720,[360,360,0,0,0,0,0,0,0,0],"2 inst: Mar + Apr"),mkDebt("monica","Monica",850,[0,425,425,0,0,0,0,0,0,0],"2 inst: Apr + May"),mkDebt("ikemfeuna","Ikemfeuna",1155,[0,1155,0,0,0,0,0,0,0,0],"ALL April"),mkDebt("viv2500","Vivian (2,500 cash)",2500,[0,625,625,625,625,0,0,0,0,0],"Apr–Jul (625/mo)"),mkDebt("david","David",4500,[0,0,4500,0,0,0,0,0,0,0],"ALL May")];
-const INIT_SAVINGS=[0,500,0,1000,1000,1500,1500,2000,2000,2000];
-const OWED=[{id:"olivia",name:"Olivia",amount:925},{id:"emelda",name:"Emelda",amount:3240},{id:"given",name:"Given",amount:1000}];
-const FUTURE_DEBTS=[{name:"Anderson",amount:510},{name:"Irene",amount:850},{name:"Adeola",amount:"TBD"}];
-const ACTIONS=[{id:1,task:"Pay Pastor Awede — ALL 2,349",cat:"Debt",dl:"March",phase:1,p:"🔴"},{id:2,task:"Pay A — majority 1,400",cat:"Debt",dl:"March",phase:1,p:"🔴"},{id:3,task:"Pay Vivian — half 860",cat:"Debt",dl:"March",phase:1,p:"🔴"},{id:4,task:"Pay PhD — ALL 300",cat:"Debt",dl:"March",phase:1,p:"🔴"},{id:5,task:"Pay Omotolani — inst. 1/2",cat:"Debt",dl:"March",phase:1,p:"🔴"},{id:6,task:"Chase Olivia for 925 owed",cat:"Collect",dl:"March",phase:1,p:"🔴"},{id:7,task:"Chase Emelda for 3,240 owed",cat:"Collect",dl:"March",phase:1,p:"🔴"},{id:8,task:"Complete 2nd job interview",cat:"Income",dl:"Mar/Apr",phase:1,p:"🔴"},{id:9,task:"Pay A — remaining 320",cat:"Debt",dl:"April",phase:1,p:"🔴"},{id:10,task:"Pay Ikemfeuna — ALL 1,155",cat:"Debt",dl:"April",phase:1,p:"🔴"},{id:11,task:"Pay Omotolani — inst. 2/2",cat:"Debt",dl:"April",phase:2,p:"🔴"},{id:12,task:"Pay Monica — inst. 1/2",cat:"Debt",dl:"April",phase:2,p:"🔴"},{id:13,task:"Launch new business",cat:"Biz",dl:"May/Jun",phase:2,p:"🔴"},{id:14,task:"Pay David — ALL 4,500",cat:"Debt",dl:"May",phase:2,p:"🔴"},{id:15,task:"Pay Monica — inst. 2/2",cat:"Debt",dl:"May",phase:2,p:"🔴"},{id:16,task:"Pay Work Permit (€500)",cat:"Permit",dl:"Jun+",phase:2,p:"🟡"},{id:17,task:"Chase Given for 1,000",cat:"Collect",dl:"May",phase:2,p:"🟡"},{id:18,task:"Become DEBT-FREE 🎉",cat:"Goal",dl:"July",phase:3,p:"🔴"},{id:19,task:"Ramp savings 2,000/mo",cat:"Save",dl:"Oct+",phase:3,p:"🔴"},{id:20,task:"Build emergency fund",cat:"Save",dl:"Dec",phase:3,p:"🟡"},{id:21,task:"Passport Renewal (894)",cat:"Permit",dl:"Q4",phase:3,p:"🟡"},{id:22,task:"Scale business 1,000+",cat:"Biz",dl:"Q4",phase:3,p:"🟡"},{id:23,task:"Plan 2027 budget",cat:"Admin",dl:"Dec",phase:3,p:"🟢"}];
-const MAJOR_NEEDS=[{name:"Work Permit",eur:500,target:"After debt"},{name:"School Fees",ron:33105,target:"2027–2028"},{name:"Passport Renewal",ron:894,target:"Q4 2026"},{name:"WES",ron:1144,target:"2027+"},{name:"Doctorate Defense",ron:3000,target:"2027+"}];
-const catStyle={Debt:{bg:"#3a1c1c",tx:"#f87171"},Collect:{bg:"#1c2d3a",tx:"#60a5fa"},Income:{bg:"#1a2e1a",tx:"#4ade80"},Biz:{bg:"#2e2a1a",tx:"#fbbf24"},Permit:{bg:"#2a1a2e",tx:"#c084fc"},Save:{bg:"#1a2e1a",tx:"#4ade80"},Goal:{bg:"#2e2a1a",tx:"#fbbf24"},Admin:{bg:"#1e1e1e",tx:"#94a3b8"}};
-
-// ── Editable Cell ──
-const ECell=({value,onChange,align="right",color="#e2e0d8",bold,width})=>(
-  <td style={{padding:"4px 6px",borderBottom:"1px solid #1e2a3a",textAlign:align}}>
-    <input type="number" value={value} onChange={e=>onChange(Number(e.target.value)||0)}
-      style={{width:width||"100%",padding:"6px 8px",borderRadius:6,border:"1px solid #2a3a4a",background:"#0a0f1808",color,fontSize:14,fontWeight:bold?700:500,fontFamily:"'Outfit',sans-serif",textAlign:align,outline:"none",minWidth:50}} />
-  </td>
-);
-
-// ── Editable Text Cell ──
-const ETCell=({value,onChange,placeholder="Name"})=>(
-  <td style={{padding:"4px 6px",borderBottom:"1px solid #1e2a3a"}}>
-    <input type="text" value={value} onChange={e=>onChange(e.target.value)} placeholder={placeholder}
-      style={{width:"100%",padding:"6px 8px",borderRadius:6,border:"1px solid #2a3a4a",background:"transparent",color:"#e2e0d8",fontSize:13,fontWeight:600,fontFamily:"'Outfit',sans-serif",outline:"none"}} />
-  </td>
-);
-
-const Cell=({children,align="left",bold,gold,red,green,muted,head,style:s})=>(<td style={{padding:head?"10px 12px":"8px 12px",textAlign:align,fontWeight:bold||head?700:400,fontSize:head?10:13,color:gold?"#d4a843":red?"#f87171":green?"#4ade80":muted?"#64748b":head?"#8a8a7a":"#e2e0d8",letterSpacing:head?1.2:0,textTransform:head?"uppercase":"none",borderBottom:"1px solid #1e2a3a",fontFamily:"'Outfit',sans-serif",whiteSpace:"nowrap",...s}}>{children}</td>);
-const Badge=({children,bg,tx})=>(<span style={{display:"inline-block",padding:"2px 10px",borderRadius:4,fontSize:10,fontWeight:700,background:bg,color:tx,letterSpacing:.8,textTransform:"uppercase",fontFamily:"'Outfit',sans-serif"}}>{children}</span>);
-const SectionHead=({children,icon,gold})=>(<div style={{display:"flex",alignItems:"center",gap:10,marginBottom:16}}>{icon&&<span style={{fontSize:20}}>{icon}</span>}<h2 style={{margin:0,fontSize:18,fontWeight:700,fontFamily:"'Cormorant Garamond',serif",color:gold?"#d4a843":"#e2e0d8",letterSpacing:.5}}>{children}</h2><div style={{flex:1,height:1,background:"linear-gradient(90deg,#2a3a4a,transparent)"}}/></div>);
-const Panel=({children,style:s,glow})=>(<div style={{background:"#0d1520",border:"1px solid #1a2535",borderRadius:12,padding:24,position:"relative",overflow:"hidden",...s}}>{glow&&<div style={{position:"absolute",top:-40,right:-40,width:120,height:120,borderRadius:"50%",background:`radial-gradient(circle,${glow}15,transparent 70%)`,pointerEvents:"none"}}/>}<div style={{position:"relative"}}>{children}</div></div>);
-const ProgressBar=({value,max,color="#d4a843",h=6})=>(<div style={{width:"100%",background:"#1a2535",borderRadius:99,height:h,overflow:"hidden"}}><div style={{width:`${Math.min(max>0?(value/max)*100:0,100)}%`,background:`linear-gradient(90deg,${color},${color}cc)`,height:"100%",borderRadius:99,transition:"width .8s cubic-bezier(.4,0,.2,1)"}}/></div>);
-const StatBox=({label,value,sub,color="#d4a843",icon})=>(<div style={{padding:"16px 20px",background:"#0a0f18",borderRadius:10,border:"1px solid #1a2535",flex:1,minWidth:150}}><div style={{fontSize:10,fontWeight:700,color:"#64748b",letterSpacing:1.2,textTransform:"uppercase",fontFamily:"'Outfit',sans-serif",marginBottom:6}}>{icon} {label}</div><div style={{fontSize:22,fontWeight:800,color,fontFamily:"'Cormorant Garamond',serif"}}>{value}</div>{sub&&<div style={{fontSize:11,color:"#4a5568",marginTop:2}}>{sub}</div>}</div>);
-const AddBtn=({onClick,label})=>(<button onClick={onClick} style={{padding:"8px 16px",borderRadius:8,border:"1px dashed #2a3a4a",background:"transparent",color:"#d4a843",fontSize:12,fontWeight:700,fontFamily:"'Outfit',sans-serif",cursor:"pointer",marginTop:8,transition:"all .2s",letterSpacing:.5}} onMouseEnter={e=>{e.target.style.background="#d4a84310";e.target.style.borderColor="#d4a843"}} onMouseLeave={e=>{e.target.style.background="transparent";e.target.style.borderColor="#2a3a4a"}}>+ {label}</button>);
-const DelBtn=({onClick})=>(<button onClick={onClick} style={{padding:"2px 8px",borderRadius:4,border:"none",background:"#f8717120",color:"#f87171",fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"'Outfit',sans-serif"}}>✕</button>);
-const StatusSelect=({value,onChange})=>{const colors={"Not Started":"#64748b","In Progress":"#fbbf24",Done:"#4ade80",Blocked:"#f87171"};return(<select value={value} onChange={e=>onChange(e.target.value)} style={{padding:"5px 8px",borderRadius:6,border:`1px solid ${colors[value]}40`,background:"#0a0f18",color:colors[value],fontSize:11,fontWeight:700,fontFamily:"'Outfit',sans-serif",cursor:"pointer",outline:"none"}}>{Object.keys(colors).map(s=><option key={s}>{s}</option>)}</select>);};
+import { useState, useMemo, useEffect, useCallback } from "react";
+const MONTHS=["May","June","July","August","September","October","November","December"];
+const MO=["MAY","JUN","JUL","AUG","SEP","OCT","NOV","DEC"];
+const MI=8;
+const STORE_KEY="bp2026_v3";
+const save=d=>{try{localStorage.setItem(STORE_KEY,JSON.stringify(d))}catch(e){}};
+const load=()=>{try{const r=localStorage.getItem(STORE_KEY);return r?JSON.parse(r):null}catch(e){return null}};
+const clear=()=>{try{localStorage.removeItem(STORE_KEY)}catch(e){}};
+let _uid=Date.now();const uid=()=>String(++_uid);
+const sym={RON:"RON",EUR:"\u20ac",USD:"$",GBP:"\u00a3"};
+const fmt=(v,c,R)=>{const n=c==="RON"?v:v/R[c];const abs=Math.abs(n);const s=abs<0.5?"0":abs.toLocaleString("en",{maximumFractionDigits:0});if(c==="RON")return`${n<0?"-":""}${s} RON`;return`${n<0?"-":""}${sym[c]}${s}`};
+const DEF={rates:{EUR:5.0948,USD:4.3411,GBP:5.8739},salaryGBP:1458.33,cur:"RON",
+expenses:[{id:"1",name:"Work Tax (Partner)",amount:1625},{id:"2",name:"Nails",amount:310},{id:"3",name:"Food & Groceries",amount:500},{id:"4",name:"Klarna Payment",amount:370},{id:"5",name:"Internet",amount:60},{id:"6",name:"Netflix",amount:55},{id:"7",name:"Claude AI",amount:100},{id:"8",name:"Transport",amount:200},{id:"9",name:"Skincare & Body Care",amount:150}],
+debts:[{id:"d1",name:"Monica",total:850,schedule:[425,0,0,0,0,0,0,0],deadline:"May",paid:[false,false,false,false,false,false,false,false]},{id:"d2",name:"Vivian (2,500 cash)",total:2500,schedule:[625,625,625,0,0,0,0,0],deadline:"May\u2013Jul",paid:[false,false,false,false,false,false,false,false]},{id:"d3",name:"David",total:4500,schedule:[4500,0,0,0,0,0,0,0],deadline:"ALL May",paid:[false,false,false,false,false,false,false,false]}],
+incomeStreams:[{id:"s1",name:"2nd Job",amounts:[0,0,0,0,0,0,0,0]},{id:"s2",name:"Business",amounts:[0,0,0,0,0,0,0,0]},{id:"s3",name:"Side Hustles",amounts:[0,0,0,0,0,0,0,0]},{id:"s4",name:"Collections",amounts:[0,0,0,0,0,0,0,0]}],
+savings:[0,1000,1000,1500,1500,2000,2000,2000],
+owed:[{id:"o1",name:"Olivia",amount:925,status:"Pending",notes:""},{id:"o2",name:"Emelda",amount:3240,status:"Pending",notes:""},{id:"o3",name:"Given",amount:1000,status:"Pending",notes:""}],
+majorPlans:[{id:"m1",name:"Work Permit",amount:2547,target:"After debt",status:"Not Started",notes:"\u20ac500"},{id:"m2",name:"School Fees",amount:33105,target:"2027\u20132028",status:"Not Started",notes:""},{id:"m3",name:"Passport Renewal",amount:894,target:"Q4 2026",status:"Not Started",notes:""},{id:"m4",name:"WES",amount:1144,target:"2027+",status:"Not Started",notes:""},{id:"m5",name:"Doctorate Defense",amount:3000,target:"2027+",status:"Not Started",notes:""}],
+futureDebts:[{id:"f1",name:"Anderson",amount:510,notes:"Pay when comfortable"},{id:"f2",name:"Irene",amount:850,notes:"Pay when comfortable"},{id:"f3",name:"Adeola",amount:0,notes:"Amount TBD"}],
+monthExtras:Array.from({length:MI},()=>[])};
+const C={bg:"#05080f",panel:"#0b1018",pb:"#151e2d",gold:"#c9a84c",gd:"#c9a84c40",green:"#34d399",red:"#f87171",purple:"#a78bfa",blue:"#60a5fa",text:"#d4d0c8",muted:"#5a6577",dim:"#2a3545"};
+const Inp=({value,onChange,type="number",w,color,placeholder,style:sx})=>(<input type={type} value={value} placeholder={placeholder} onChange={e=>onChange(type==="number"?(Number(e.target.value)||0):e.target.value)} style={{width:w||"100%",padding:"7px 10px",borderRadius:6,outline:"none",border:`1px solid ${C.dim}`,background:C.bg,fontSize:13,fontWeight:600,fontFamily:"'Outfit',sans-serif",textAlign:type==="number"?"right":"left",color:color||C.text,...sx}}/>);
+const Btn=({children,onClick,color:cl=C.gold,variant="ghost",style:sx})=>(<button onClick={onClick} style={{padding:variant==="sm"?"3px 10px":"8px 18px",borderRadius:6,border:variant==="filled"?"none":`1px dashed ${cl}40`,background:variant==="filled"?cl:"transparent",cursor:"pointer",color:variant==="filled"?C.bg:cl,fontSize:variant==="sm"?10:12,fontWeight:700,fontFamily:"'Outfit',sans-serif",transition:"all .2s",letterSpacing:.3,...sx}}>{children}</button>);
+const Badge=({children,color:cl=C.muted})=>(<span style={{display:"inline-block",padding:"2px 10px",borderRadius:4,fontSize:10,fontWeight:700,background:`${cl}15`,color:cl,letterSpacing:.8,textTransform:"uppercase",fontFamily:"'Outfit',sans-serif"}}>{children}</span>);
+const Panel=({children,style:sx})=>(<div style={{background:C.panel,border:`1px solid ${C.pb}`,borderRadius:14,padding:28,...sx}}>{children}</div>);
+const Heading=({children,sub,right})=>(<div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:20,flexWrap:"wrap",gap:8}}><div><h2 style={{margin:0,fontSize:20,fontWeight:700,fontFamily:"'Cormorant Garamond',serif",color:C.gold,letterSpacing:.3}}>{children}</h2>{sub&&<p style={{margin:"4px 0 0",fontSize:12,color:C.muted}}>{sub}</p>}</div>{right&&<div>{right}</div>}</div>);
+const Stat=({label,value,color:cl=C.gold})=>(<div style={{padding:"16px 20px",background:C.bg,borderRadius:10,border:`1px solid ${C.pb}`,flex:1,minWidth:140}}><div style={{fontSize:10,fontWeight:700,color:C.muted,letterSpacing:1.2,textTransform:"uppercase",marginBottom:6}}>{label}</div><div style={{fontSize:22,fontWeight:800,color:cl,fontFamily:"'Cormorant Garamond',serif"}}>{value}</div></div>);
+const Bar=({value,max,color:cl=C.gold,h=6})=>(<div style={{width:"100%",background:C.dim,borderRadius:99,height:h,overflow:"hidden"}}><div style={{width:`${max>0?Math.min((value/max)*100,100):0}%`,background:cl,height:"100%",borderRadius:99,transition:"width .6s ease"}}/></div>);
+const Td=({children,align="left",bold,color:cl,head,style:sx})=>(<td style={{padding:head?"10px 10px":"8px 10px",textAlign:align,fontWeight:bold||head?700:400,fontSize:head?10:13,color:cl||(head?C.muted:C.text),letterSpacing:head?1:0,textTransform:head?"uppercase":"none",borderBottom:`1px solid ${C.pb}`,fontFamily:"'Outfit',sans-serif",whiteSpace:"nowrap",...sx}}>{children}</td>);
 
 export default function App(){
-  const saved = useMemo(() => loadData(), []);
+  const init=useMemo(()=>load()||{},[]);
+  const g=key=>init[key]!==undefined?JSON.parse(JSON.stringify(init[key])):JSON.parse(JSON.stringify(DEF[key]));
   const[tab,setTab]=useState("dashboard");
-  const[cur,setCur]=useState(saved?.cur||"RON");
-  const[rates,setRates]=useState(saved?.rates||DEFAULT_RATES);
-  const[salaryGBP,setSalaryGBP]=useState(saved?.salaryGBP??INIT_SALARY_GBP);
-  const[expenses,setExpenses]=useState(saved?.expenses||INIT_EXPENSES.map(e=>({...e})));
-  const[debts,setDebts]=useState(saved?.debts||INIT_DEBTS.map(d=>({...d,schedule:[...d.schedule]})));
-  const[extraIncome,setExtraIncome]=useState(saved?.extraIncome||Array(10).fill(null).map(()=>[0,0,0,0]));
-  const[customIncome,setCustomIncome]=useState(saved?.customIncome||[]);
-  const[savings,setSavings]=useState(saved?.savings||[...INIT_SAVINGS]);
-  const[debtPaid,setDebtPaid]=useState(saved?.debtPaid||{});
-  const[owedList,setOwedList]=useState(saved?.owedList||OWED.map(o=>({...o})));
-  const[owedStatus,setOwedStatus]=useState(saved?.owedStatus||{});
-  const[actionStatus,setActionStatus]=useState(saved?.actionStatus||{});
-  const[customActions,setCustomActions]=useState(saved?.customActions||[]);
+  const[cur,setCur]=useState(init.cur||DEF.cur);
+  const[rates,setRates]=useState(g("rates"));
+  const[salaryGBP,setSalaryGBP]=useState(init.salaryGBP??DEF.salaryGBP);
+  const[expenses,setExpenses]=useState(g("expenses"));
+  const[debts,setDebts]=useState(g("debts"));
+  const[incomeStreams,setIncomeStreams]=useState(g("incomeStreams"));
+  const[savings,setSavings]=useState(g("savings"));
+  const[owed,setOwed]=useState(g("owed"));
+  const[majorPlans,setMajorPlans]=useState(g("majorPlans"));
+  const[futureDebts,setFutureDebts]=useState(g("futureDebts"));
+  const[monthExtras,setMonthExtras]=useState(g("monthExtras"));
   const[selMonth,setSelMonth]=useState(0);
-  const[customMonthlyExp,setCustomMonthlyExp]=useState(saved?.customMonthlyExp||Array(10).fill(null).map(()=>[]));
-  const[showResetConfirm,setShowResetConfirm]=useState(false);
+  const[resetConfirm,setResetConfirm]=useState(false);
 
-  // Auto-save whenever anything changes
-  useEffect(()=>{
-    const timer = setTimeout(()=>{
-      saveData({cur,rates,salaryGBP,expenses,debts,extraIncome,customIncome,savings,debtPaid,owedList,owedStatus,actionStatus,customActions,customMonthlyExp});
-    }, 300);
-    return ()=>clearTimeout(timer);
-  },[cur,rates,salaryGBP,expenses,debts,extraIncome,customIncome,savings,debtPaid,owedList,owedStatus,actionStatus,customActions,customMonthlyExp]);
+  useEffect(()=>{const t=setTimeout(()=>save({cur,rates,salaryGBP,expenses,debts,incomeStreams,savings,owed,majorPlans,futureDebts,monthExtras}),400);return()=>clearTimeout(t)},[cur,rates,salaryGBP,expenses,debts,incomeStreams,savings,owed,majorPlans,futureDebts,monthExtras]);
+  const handleReset=()=>{clear();window.location.reload()};
 
-  const handleReset = ()=>{ clearData(); window.location.reload(); };
+  const salaryRON=salaryGBP*rates.GBP;
+  const f=useCallback(v=>fmt(v,cur,rates),[cur,rates]);
+  const totalFixed=expenses.reduce((s,e)=>s+e.amount,0);
+  const extraInc=useCallback(i=>incomeStreams.reduce((s,st)=>s+(st.amounts[i]||0),0),[incomeStreams]);
+  const monthExtra=useCallback(i=>(monthExtras[i]||[]).reduce((s,e)=>s+e.amount,0),[monthExtras]);
+  const income=useCallback(i=>salaryRON+extraInc(i),[salaryRON,extraInc]);
+  const debtPmt=useCallback(i=>debts.reduce((s,d)=>s+(d.paid[i]?0:(d.schedule[i]||0)),0),[debts]);
+  const net=useCallback(i=>income(i)-totalFixed-monthExtra(i)-debtPmt(i)-savings[i],[income,totalFixed,monthExtra,debtPmt,savings]);
+  const totalDebt=debts.reduce((s,d)=>s+d.total,0);
+  const totalPaid=debts.reduce((s,d)=>s+d.schedule.reduce((a,v,i)=>a+(d.paid[i]?v:0),0),0);
+  const totalRemaining=totalDebt-totalPaid;
+  const annualIncome=useMemo(()=>Array(MI).fill(0).reduce((s,_,i)=>s+income(i),0),[income]);
+  const annualSavings=savings.reduce((a,b)=>a+b,0);
+  const totalOwed=owed.reduce((s,o)=>s+o.amount,0);
+  const cumSaved=useCallback(i=>{let t=0;for(let j=0;j<=i;j++)t+=savings[j];return t},[savings]);
 
-  const salaryRON=useMemo(()=>salaryGBP*rates.GBP,[salaryGBP,rates]);
-  const totalFixed=useMemo(()=>expenses.reduce((s,e)=>s+e.amount,0),[expenses]);
-  const f=useCallback((v)=>fmtN(v,cur,rates),[cur,rates]);
-  const monthlyExtra=useCallback((i)=>(extraIncome[i]||[0,0,0,0]).reduce((a,b)=>a+b,0)+customIncome.reduce((s,ci)=>s+(ci.amounts[i]||0),0),[extraIncome,customIncome]);
-  const monthlyIncome=useCallback((i)=>salaryRON+monthlyExtra(i),[salaryRON,monthlyExtra]);
-  const monthlyCustomExp=useCallback((i)=>(customMonthlyExp[i]||[]).reduce((s,e)=>s+e.amount,0),[customMonthlyExp]);
-  const totalMonthlyExp=useCallback((i)=>totalFixed+monthlyCustomExp(i),[totalFixed,monthlyCustomExp]);
+  const updList=(setter,id,field,val)=>setter(prev=>prev.map(item=>item.id===id?{...item,[field]:val}:item));
+  const addToList=(setter,newItem)=>setter(prev=>[...prev,newItem]);
+  const delFromList=(setter,id)=>setter(prev=>prev.filter(item=>item.id!==id));
+  const updDebtSchedule=(id,mi,val)=>setDebts(prev=>prev.map(d=>d.id===id?{...d,schedule:d.schedule.map((v,i)=>i===mi?val:v)}:d));
+  const togglePaid=(id,mi)=>setDebts(prev=>prev.map(d=>d.id===id?{...d,paid:d.paid.map((v,i)=>i===mi?!v:v)}:d));
+  const updStreamAmt=(id,mi,val)=>setIncomeStreams(prev=>prev.map(s=>s.id===id?{...s,amounts:s.amounts.map((v,i)=>i===mi?val:v)}:s));
+  const updSaving=(mi,val)=>setSavings(prev=>prev.map((v,i)=>i===mi?val:v));
+  const addMonthExp=mi=>setMonthExtras(prev=>{const n=prev.map(a=>[...a]);n[mi]=[...n[mi],{id:uid(),name:"",amount:0}];return n});
+  const updMonthExp=(mi,id,field,val)=>setMonthExtras(prev=>{const n=prev.map(a=>a.map(e=>({...e})));n[mi]=n[mi].map(e=>e.id===id?{...e,[field]:val}:e);return n});
+  const delMonthExp=(mi,id)=>setMonthExtras(prev=>{const n=prev.map(a=>[...a]);n[mi]=n[mi].filter(e=>e.id!==id);return n});
 
-  const monthlyDebt=useCallback((i)=>debts.reduce((s,d)=>s+(debtPaid[`${d.id}-${i}`]?0:d.schedule[i]),0),[debts,debtPaid]);
-  const totalDebtOrig=useMemo(()=>debts.reduce((s,d)=>s+d.total,0),[debts]);
-  const totalDebtPaidSoFar=useMemo(()=>debts.reduce((s,d)=>s+d.schedule.reduce((a,v,mi)=>a+(debtPaid[`${d.id}-${mi}`]?v:0),0),0),[debts,debtPaid]);
-  const totalDebtRemaining=totalDebtOrig-totalDebtPaidSoFar;
-  const monthlyNet=useCallback((i)=>monthlyIncome(i)-totalMonthlyExp(i)-monthlyDebt(i)-savings[i],[monthlyIncome,totalMonthlyExp,monthlyDebt,savings]);
-  const cumSaved=useCallback((i)=>{let t=0;for(let j=0;j<=i;j++)t+=savings[j];return t;},[savings]);
-  const annualIncome=useMemo(()=>Array(10).fill(0).reduce((s,_,i)=>s+monthlyIncome(i),0),[monthlyIncome]);
-  const annualSavings=useMemo(()=>savings.reduce((a,b)=>a+b,0),[savings]);
-  const totalOwed=useMemo(()=>owedList.reduce((s,o)=>s+o.amount,0),[owedList]);
-  const collectedOwed=useMemo(()=>owedList.reduce((s,o)=>s+(owedStatus[o.id]==="Collected"?o.amount:owedStatus[o.id]==="Partial"?o.amount*.5:0),0),[owedList,owedStatus]);
-  const allActions=useMemo(()=>[...ACTIONS,...customActions],[customActions]);
-  const doneActions=useMemo(()=>Object.values(actionStatus).filter(s=>s==="Done").length,[actionStatus]);
+  const actions=useMemo(()=>{const acts=[];debts.forEach(d=>{const paidAmt=d.schedule.reduce((a,v,i)=>a+(d.paid[i]?v:0),0);const isCleared=paidAmt>=d.total&&d.total>0;d.schedule.forEach((v,mi)=>{if(v>0)acts.push({id:`${d.id}-${mi}`,task:`Pay ${d.name} \u2014 ${fmt(v,"RON",rates)}`,month:MONTHS[mi],status:d.paid[mi]?"Done":"Pending",cleared:isCleared})})});owed.forEach(o=>{if(o.status!=="Collected")acts.push({id:`ow-${o.id}`,task:`Collect from ${o.name} \u2014 ${fmt(o.amount,"RON",rates)}`,month:"Ongoing",status:o.status==="Partial"?"In Progress":"Pending",cleared:false})});return acts},[debts,owed,rates]);
 
-  const updateExp=(id,field,val)=>setExpenses(p=>p.map(e=>e.id===id?{...e,[field]:val}:e));
-  const addExpense=()=>setExpenses(p=>[...p,{id:"exp_"+uid(),name:"New Expense",amount:0}]);
-  const delExpense=(id)=>setExpenses(p=>p.filter(e=>e.id!==id));
-  const updateDebt=(id,field,val)=>setDebts(p=>p.map(d=>d.id===id?{...d,[field]:val}:d));
-  const updateDebtSchedule=(id,mi,val)=>setDebts(p=>p.map(d=>{if(d.id!==id)return d;const ns=[...d.schedule];ns[mi]=val;return{...d,schedule:ns};}));
-  const addDebt=()=>setDebts(p=>[...p,{id:"debt_"+uid(),name:"New Debt",total:0,schedule:Array(10).fill(0),deadline:"TBD"}]);
-  const delDebt=(id)=>setDebts(p=>p.filter(d=>d.id!==id));
-  const toggleDebtPaid=(did,mi)=>setDebtPaid(p=>({...p,[`${did}-${mi}`]:!p[`${did}-${mi}`]}));
-  const updateExtra=(mi,si,val)=>setExtraIncome(p=>{const n=p.map(r=>[...r]);n[mi][si]=val;return n;});
-  const addCustomIncome=()=>setCustomIncome(p=>[...p,{id:"ci_"+uid(),name:"New Stream",amounts:Array(10).fill(0)}]);
-  const updateCustomIncomeName=(id,name)=>setCustomIncome(p=>p.map(c=>c.id===id?{...c,name}:c));
-  const updateCustomIncomeAmt=(id,mi,val)=>setCustomIncome(p=>p.map(c=>{if(c.id!==id)return c;const a=[...c.amounts];a[mi]=val;return{...c,amounts:a};}));
-  const delCustomIncome=(id)=>setCustomIncome(p=>p.filter(c=>c.id!==id));
-  const updateSaving=(mi,val)=>setSavings(p=>{const n=[...p];n[mi]=val;return n;});
-  const updateOwed=(id,field,val)=>setOwedList(p=>p.map(o=>o.id===id?{...o,[field]:val}:o));
-  const addOwed=()=>setOwedList(p=>[...p,{id:"owed_"+uid(),name:"New Person",amount:0}]);
-  const delOwed=(id)=>setOwedList(p=>p.filter(o=>o.id!==id));
-  const addMonthlyExp=(mi)=>setCustomMonthlyExp(p=>{const n=p.map(a=>[...a]);n[mi]=[...n[mi],{id:"me_"+uid(),name:"New Item",amount:0}];return n;});
-  const updateMonthlyExp=(mi,id,field,val)=>setCustomMonthlyExp(p=>{const n=p.map(a=>a.map(e=>({...e})));n[mi]=n[mi].map(e=>e.id===id?{...e,[field]:val}:e);return n;});
-  const delMonthlyExp=(mi,id)=>setCustomMonthlyExp(p=>{const n=p.map(a=>[...a]);n[mi]=n[mi].filter(e=>e.id!==id);return n;});
-  const addAction=(phase)=>setCustomActions(p=>[...p,{id:100+uid(),task:"New Task",cat:"Admin",dl:"TBD",phase,p:"🟡"}]);
+  const tabs=[{id:"dashboard",label:"Dashboard"},{id:"monthly",label:"Monthly"},{id:"income",label:"Income"},{id:"debts",label:"Debts"},{id:"savings",label:"Savings"},{id:"owed",label:"Owed to Me"},{id:"plans",label:"Major Plans"},{id:"actions",label:"Actions"},{id:"settings",label:"Settings"}];
 
-  const tabs=[{id:"dashboard",label:"Dashboard",icon:"◈"},{id:"monthly",label:"Monthly",icon:"◉"},{id:"income",label:"Income",icon:"◆"},{id:"debts",label:"Debts",icon:"◇"},{id:"savings",label:"Savings",icon:"◈"},{id:"actions",label:"Actions",icon:"◉"},{id:"settings",label:"Settings",icon:"◆"},{id:"advice",label:"Advice",icon:"◇"}];
+  return(<div style={{minHeight:"100vh",background:C.bg,color:C.text,fontFamily:"'Outfit',sans-serif"}}>
+    <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700;800&family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet"/>
+    <style>{`*{box-sizing:border-box;margin:0;padding:0}::-webkit-scrollbar{width:5px;height:5px}::-webkit-scrollbar-track{background:${C.bg}}::-webkit-scrollbar-thumb{background:${C.dim};border-radius:3px}input[type=number]::-webkit-inner-spin-button{opacity:0}input:focus{border-color:${C.gold}!important}select:focus{border-color:${C.gold}!important}table{border-collapse:collapse;width:100%}input,select{font-size:16px!important}`}</style>
 
-  return(<div style={{minHeight:"100vh",background:"#080c14",color:"#e2e0d8",fontFamily:"'Outfit','Segoe UI',sans-serif"}}>
-    <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;500;600;700;800&family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet"/>
-    <style>{`*{box-sizing:border-box}::-webkit-scrollbar{width:6px;height:6px}::-webkit-scrollbar-track{background:#0a0f18}::-webkit-scrollbar-thumb{background:#2a3a4a;border-radius:3px}input[type=number]::-webkit-inner-spin-button{opacity:0}input:focus,select:focus{border-color:#d4a843!important;box-shadow:0 0 0 2px #d4a84320!important}@keyframes fadeUp{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}.fadeUp{animation:fadeUp .5s ease-out forwards}table{border-collapse:collapse;width:100%}td,th{font-family:'Outfit',sans-serif}`}</style>
+    <header style={{borderBottom:`1px solid ${C.pb}`,padding:"20px 24px"}}><div style={{maxWidth:1300,margin:"0 auto"}}><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:12}}><div><div style={{fontSize:10,fontWeight:700,color:C.gold,letterSpacing:4,textTransform:"uppercase"}}>Budget Planner</div><h1 style={{fontSize:28,fontWeight:800,fontFamily:"'Cormorant Garamond',serif",color:"#f0ece4",letterSpacing:-.5}}>2026</h1></div><div style={{display:"flex",gap:3,background:C.panel,borderRadius:8,padding:3,border:`1px solid ${C.pb}`}}>{["RON","EUR","USD","GBP"].map(c=>(<button key={c} onClick={()=>setCur(c)} style={{padding:"6px 14px",borderRadius:6,border:"none",cursor:"pointer",fontSize:11,fontWeight:800,fontFamily:"'Outfit',sans-serif",letterSpacing:1,background:cur===c?C.gold:"transparent",color:cur===c?C.bg:C.muted}}>{c}</button>))}</div></div>
+    <div style={{display:"flex",gap:10,marginTop:16,flexWrap:"wrap"}}><Stat label="Monthly Income" value={f(salaryRON)} color={C.green}/><Stat label="Expenses" value={f(totalFixed)} color={C.red}/><Stat label="Debt Left" value={f(totalRemaining)} color={totalRemaining<=0?C.green:C.red}/><Stat label="Savings Target" value={f(annualSavings)} color={C.gold}/></div></div></header>
 
-    {/* HEADER */}
-    <div style={{background:"linear-gradient(135deg,#0a0f18,#111827 50%,#0d1520)",borderBottom:"1px solid #1a2535",padding:"24px 32px",position:"relative",overflow:"hidden"}}>
-      <div style={{position:"absolute",top:0,right:0,width:400,height:200,background:"radial-gradient(ellipse at top right,#d4a84308,transparent 60%)",pointerEvents:"none"}}/>
-      <div style={{maxWidth:1400,margin:"0 auto",position:"relative"}}>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:16}}>
-          <div>
-            <div style={{fontSize:10,fontWeight:700,color:"#d4a843",letterSpacing:3,textTransform:"uppercase",marginBottom:4}}>Annual Budget Planner</div>
-            <h1 style={{margin:0,fontSize:32,fontWeight:800,fontFamily:"'Cormorant Garamond',serif",color:"#f0ece4",letterSpacing:-.5}}>Financial Year 2026</h1>
-          </div>
-          <div style={{display:"flex",gap:4,background:"#0a0f18",borderRadius:8,padding:3,border:"1px solid #1a2535"}}>
-            {["RON","EUR","USD","GBP"].map(c=>(<button key={c} onClick={()=>setCur(c)} style={{padding:"6px 14px",borderRadius:6,border:"none",cursor:"pointer",fontSize:11,fontWeight:800,fontFamily:"'Outfit',sans-serif",letterSpacing:1,background:cur===c?"linear-gradient(135deg,#d4a843,#b8942f)":"transparent",color:cur===c?"#080c14":"#64748b",transition:"all .2s"}}>{c}</button>))}
-          </div>
-        </div>
-        <div style={{display:"flex",gap:12,marginTop:20,flexWrap:"wrap"}}>
-          <StatBox icon="◈" label="Monthly Income" value={f(salaryRON)} color="#4ade80"/>
-          <StatBox icon="◇" label="Fixed Expenses" value={f(totalFixed)} color="#f87171"/>
-          <StatBox icon="◆" label="Debt Remaining" value={f(totalDebtRemaining)} sub={`${totalDebtOrig>0?((totalDebtPaidSoFar/totalDebtOrig)*100).toFixed(0):0}% cleared`} color="#fbbf24"/>
-          <StatBox icon="◈" label="Annual Savings" value={f(annualSavings)} color="#d4a843"/>
-        </div>
-      </div>
-    </div>
+    <nav style={{background:C.panel,borderBottom:`1px solid ${C.pb}`,position:"sticky",top:0,zIndex:10,padding:"0 24px"}}><div style={{maxWidth:1300,margin:"0 auto",display:"flex",gap:1,overflowX:"auto",padding:"6px 0"}}>{tabs.map(t=>(<button key={t.id} onClick={()=>setTab(t.id)} style={{padding:"10px 16px",borderRadius:8,border:"none",cursor:"pointer",fontSize:12,fontWeight:700,fontFamily:"'Outfit',sans-serif",whiteSpace:"nowrap",background:tab===t.id?`${C.gold}15`:"transparent",color:tab===t.id?C.gold:C.muted,borderBottom:tab===t.id?`2px solid ${C.gold}`:"2px solid transparent"}}>{t.label}</button>))}</div></nav>
 
-    {/* NAV */}
-    <div style={{background:"#0a0f18",borderBottom:"1px solid #1a2535",padding:"0 32px",position:"sticky",top:0,zIndex:10}}>
-      <div style={{maxWidth:1400,margin:"0 auto",display:"flex",gap:2,overflowX:"auto",padding:"8px 0"}}>
-        {tabs.map(t=>(<button key={t.id} onClick={()=>setTab(t.id)} style={{padding:"10px 18px",borderRadius:8,border:"none",cursor:"pointer",fontSize:12,fontWeight:700,fontFamily:"'Outfit',sans-serif",whiteSpace:"nowrap",background:tab===t.id?"#d4a84318":"transparent",color:tab===t.id?"#d4a843":"#64748b",borderBottom:tab===t.id?"2px solid #d4a843":"2px solid transparent",transition:"all .2s"}}><span style={{marginRight:6,opacity:.6}}>{t.icon}</span>{t.label}</button>))}
-      </div>
-    </div>
+    <main style={{maxWidth:1300,margin:"0 auto",padding:"20px 24px 60px"}}>
 
-    <div style={{maxWidth:1400,margin:"0 auto",padding:"24px 32px 60px"}}>
-
-    {/* ═══ DASHBOARD ═══ */}
-    {tab==="dashboard"&&(<div className="fadeUp" style={{display:"flex",flexDirection:"column",gap:20}}>
-      <Panel glow="#d4a843"><SectionHead icon="◈" gold>Monthly Overview</SectionHead>
-        <div style={{overflowX:"auto"}}><table><thead><tr><Cell head>Category</Cell>{MO.map(m=><Cell head align="right" key={m}>{m}</Cell>)}<Cell head align="right" style={{color:"#d4a843"}}>ANNUAL</Cell></tr></thead>
-        <tbody>
-          <tr><Cell bold green>💰 Income</Cell>{MO.map((_,i)=><Cell align="right" green bold key={i}>{f(monthlyIncome(i))}</Cell>)}<Cell align="right" gold bold>{f(annualIncome)}</Cell></tr>
-          <tr><Cell muted>Expenses</Cell>{MO.map((_,i)=><Cell align="right" muted key={i}>{f(totalMonthlyExp(i))}</Cell>)}<Cell align="right" muted>{f(Array(10).fill(0).reduce((s,_,i)=>s+totalMonthlyExp(i),0))}</Cell></tr>
-          <tr><Cell bold red>🔴 Debt</Cell>{MO.map((_,i)=><Cell align="right" red bold key={i}>{monthlyDebt(i)>0?f(monthlyDebt(i)):"—"}</Cell>)}<Cell align="right" red bold>{f(debts.reduce((s,d)=>s+d.schedule.reduce((a,v,mi)=>a+(debtPaid[`${d.id}-${mi}`]?0:v),0),0))}</Cell></tr>
-          <tr><Cell bold style={{color:"#c084fc"}}>💎 Savings</Cell>{MO.map((_,i)=><Cell align="right" key={i} style={{color:"#c084fc"}}>{savings[i]>0?f(savings[i]):"—"}</Cell>)}<Cell align="right" style={{color:"#c084fc",fontWeight:700}}>{f(annualSavings)}</Cell></tr>
-          <tr style={{background:"#d4a84308"}}><Cell bold gold>◈ Net Balance</Cell>{MO.map((_,i)=>{const n=monthlyNet(i);return<Cell align="right" key={i} bold style={{color:n>=0?"#4ade80":"#f87171"}}>{f(n)}</Cell>;})}<Cell align="right" gold bold>{f(Array(10).fill(0).reduce((s,_,i)=>s+monthlyNet(i),0))}</Cell></tr>
-        </tbody></table></div>
-      </Panel>
-      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(360px,1fr))",gap:20}}>
-        <Panel glow="#f87171"><SectionHead icon="◇">Debt Elimination</SectionHead>
-          <div style={{textAlign:"center",margin:"8px 0 20px"}}><div style={{fontSize:36,fontWeight:800,fontFamily:"'Cormorant Garamond',serif",color:"#f87171"}}>{f(totalDebtRemaining)}</div><div style={{fontSize:11,color:"#64748b"}}>remaining of {f(totalDebtOrig)}</div><div style={{margin:"12px auto 0",maxWidth:300}}><ProgressBar value={totalDebtPaidSoFar} max={totalDebtOrig} color="#4ade80" h={8}/></div></div>
-          {debts.map(d=>{const paid=d.schedule.reduce((a,v,mi)=>a+(debtPaid[`${d.id}-${mi}`]?v:0),0);const pp=d.total>0?(paid/d.total)*100:0;return(<div key={d.id} style={{marginBottom:10}}><div style={{display:"flex",justifyContent:"space-between",fontSize:12,marginBottom:3}}><span style={{fontWeight:600}}>{d.name}</span><span style={{color:pp>=100?"#4ade80":"#f87171",fontWeight:700}}>{pp>=100?"✓ PAID":f(d.total-paid)}</span></div><ProgressBar value={paid} max={d.total} color={pp>=100?"#4ade80":"#fbbf24"} h={4}/></div>);})}
-        </Panel>
-        <Panel glow="#4ade80"><SectionHead icon="◆">Money Owed to You</SectionHead>
-          <div style={{textAlign:"center",margin:"8px 0 16px"}}><div style={{fontSize:36,fontWeight:800,fontFamily:"'Cormorant Garamond',serif",color:"#4ade80"}}>{f(totalOwed)}</div></div>
-          {owedList.map(o=>(<div key={o.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 0",borderBottom:"1px solid #1a2535",gap:8}}>
-            <div style={{flex:1}}><input type="text" value={o.name} onChange={e=>updateOwed(o.id,"name",e.target.value)} style={{background:"transparent",border:"none",color:"#e2e0d8",fontWeight:700,fontSize:14,fontFamily:"'Outfit',sans-serif",outline:"none",width:"100%"}}/><div><input type="number" value={o.amount} onChange={e=>updateOwed(o.id,"amount",Number(e.target.value)||0)} style={{background:"transparent",border:"none",color:"#64748b",fontSize:12,fontFamily:"'Outfit',sans-serif",outline:"none",width:100}}/></div></div>
-            <select value={owedStatus[o.id]||"Pending"} onChange={e=>setOwedStatus(p=>({...p,[o.id]:e.target.value}))} style={{padding:"5px 10px",borderRadius:6,border:"1px solid #2a3a4a",background:"#0a0f18",fontSize:11,fontWeight:700,fontFamily:"'Outfit',sans-serif",cursor:"pointer",outline:"none",color:(owedStatus[o.id]||"Pending")==="Collected"?"#4ade80":"#fbbf24"}}><option>Pending</option><option>Partial</option><option>Collected</option></select>
-            <DelBtn onClick={()=>delOwed(o.id)}/>
-          </div>))}
-          <AddBtn onClick={addOwed} label="Add Person"/>
-        </Panel>
+    {tab==="dashboard"&&(<div style={{display:"flex",flexDirection:"column",gap:16}}>
+      <Panel><Heading sub="May \u2013 December 2026">Monthly Overview</Heading><div style={{overflowX:"auto"}}><table><thead><tr><Td head>Category</Td>{MO.map(m=><Td head align="right" key={m}>{m}</Td>)}<Td head align="right" color={C.gold}>TOTAL</Td></tr></thead><tbody>
+        <tr><Td bold color={C.green}>Income</Td>{MO.map((_,i)=><Td align="right" color={C.green} key={i}>{f(income(i))}</Td>)}<Td align="right" bold color={C.gold}>{f(annualIncome)}</Td></tr>
+        <tr><Td color={C.muted}>Fixed Expenses</Td>{MO.map((_,i)=><Td align="right" color={C.muted} key={i}>{f(totalFixed)}</Td>)}<Td align="right" color={C.muted}>{f(totalFixed*MI)}</Td></tr>
+        <tr><Td color={C.muted}>Extra Expenses</Td>{MO.map((_,i)=><Td align="right" color={C.muted} key={i}>{monthExtra(i)>0?f(monthExtra(i)):"\u2014"}</Td>)}<Td align="right" color={C.muted}>{f(Array(MI).fill(0).reduce((s,_,i)=>s+monthExtra(i),0))}</Td></tr>
+        <tr><Td bold color={C.red}>Debt Payments</Td>{MO.map((_,i)=><Td align="right" color={C.red} key={i}>{debtPmt(i)>0?f(debtPmt(i)):"\u2014"}</Td>)}<Td align="right" bold color={C.red}>{f(Array(MI).fill(0).reduce((s,_,i)=>s+debtPmt(i),0))}</Td></tr>
+        <tr><Td bold color={C.purple}>Savings</Td>{MO.map((_,i)=><Td align="right" color={C.purple} key={i}>{savings[i]>0?f(savings[i]):"\u2014"}</Td>)}<Td align="right" bold color={C.purple}>{f(annualSavings)}</Td></tr>
+        <tr style={{background:`${C.gold}08`}}><Td bold color={C.gold}>Net Balance</Td>{MO.map((_,i)=>{const n=net(i);return<Td align="right" bold color={n>=0?C.green:C.red} key={i}>{f(n)}</Td>})}<Td align="right" bold color={C.gold}>{f(Array(MI).fill(0).reduce((s,_,i)=>s+net(i),0))}</Td></tr>
+      </tbody></table></div></Panel>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(340px,1fr))",gap:16}}>
+        <Panel><Heading>Debt Progress</Heading><div style={{textAlign:"center",marginBottom:16}}><div style={{fontSize:36,fontWeight:800,fontFamily:"'Cormorant Garamond',serif",color:totalRemaining<=0?C.green:C.red}}>{f(totalRemaining)}</div><div style={{fontSize:11,color:C.muted}}>of {f(totalDebt)} \u00b7 {totalDebt>0?((totalPaid/totalDebt)*100).toFixed(0):0}% cleared</div><div style={{margin:"10px auto",maxWidth:280}}><Bar value={totalPaid} max={totalDebt} color={C.green} h={8}/></div></div>
+        {debts.map(d=>{const p=d.schedule.reduce((a,v,i)=>a+(d.paid[i]?v:0),0);const done=p>=d.total&&d.total>0;return(<div key={d.id} style={{marginBottom:8,opacity:done?.4:1}}><div style={{display:"flex",justifyContent:"space-between",fontSize:12,marginBottom:3}}><span style={{fontWeight:600,textDecoration:done?"line-through":"none"}}>{d.name}</span><span style={{color:done?C.green:C.red,fontWeight:700}}>{done?"CLEARED":f(d.total-p)}</span></div><Bar value={p} max={d.total} color={done?C.green:C.gold} h={4}/></div>)})}</Panel>
+        <Panel><Heading>Currency Summary</Heading><table><thead><tr><Td head/><Td head align="right">RON</Td><Td head align="right">EUR</Td><Td head align="right">USD</Td><Td head align="right">GBP</Td></tr></thead><tbody>
+        {[{l:"Income",v:annualIncome,c:C.green},{l:"Expenses",v:totalFixed*MI,c:C.red},{l:"Debt",v:totalDebt,c:C.red},{l:"Savings",v:annualSavings,c:C.purple}].map((r,i)=>(<tr key={i}><Td bold color={r.c}>{r.l}</Td>{["RON","EUR","USD","GBP"].map(c=><Td key={c} align="right">{fmt(r.v,c,rates)}</Td>)}</tr>))}</tbody></table></Panel>
       </div>
     </div>)}
 
-    {/* ═══ MONTHLY ═══ */}
-    {tab==="monthly"&&(<div className="fadeUp" style={{display:"flex",flexDirection:"column",gap:20}}>
-      <div style={{display:"flex",gap:4,flexWrap:"wrap"}}>{MONTHS.map((m,i)=>(<button key={m} onClick={()=>setSelMonth(i)} style={{padding:"8px 18px",borderRadius:8,border:"1px solid",cursor:"pointer",fontSize:12,fontWeight:700,fontFamily:"'Outfit',sans-serif",borderColor:selMonth===i?"#d4a843":"#1a2535",background:selMonth===i?"#d4a84318":"#0a0f18",color:selMonth===i?"#d4a843":"#64748b"}}>{MO[i]}</button>))}</div>
-      <Panel glow="#d4a843"><SectionHead icon="◉" gold>{MONTHS[selMonth]} 2026</SectionHead>
-        <div style={{display:"flex",gap:12,flexWrap:"wrap",marginBottom:24}}>
-          {[{l:"Income",v:monthlyIncome(selMonth),c:"#4ade80"},{l:"Expenses",v:totalMonthlyExp(selMonth),c:"#64748b"},{l:"Debt",v:monthlyDebt(selMonth),c:"#f87171"},{l:"Savings",v:savings[selMonth],c:"#c084fc"},{l:"Net",v:monthlyNet(selMonth),c:monthlyNet(selMonth)>=0?"#4ade80":"#f87171"}].map((s,i)=>(<div key={i} style={{flex:1,minWidth:120,padding:"14px 16px",background:"#0a0f18",borderRadius:8,borderLeft:`3px solid ${s.c}`}}><div style={{fontSize:10,fontWeight:700,color:"#64748b",letterSpacing:1,textTransform:"uppercase"}}>{s.l}</div><div style={{fontSize:22,fontWeight:800,color:s.c,fontFamily:"'Cormorant Garamond',serif",marginTop:4}}>{f(s.v)}</div></div>))}
-        </div>
-
-        {/* Expenses - editable */}
-        <h4 style={{margin:"0 0 8px",fontSize:12,fontWeight:700,color:"#64748b",letterSpacing:1,textTransform:"uppercase"}}>Fixed Expenses (edit in Settings)</h4>
-        <table><tbody>
-          {expenses.map((e,i)=>(<tr key={e.id} style={{background:i%2===0?"#0a0f1880":"transparent"}}><Cell>{e.name}</Cell><Cell align="right" bold>{f(e.amount)}</Cell></tr>))}
-        </tbody></table>
-
-        {/* Custom monthly expenses */}
-        <h4 style={{margin:"20px 0 8px",fontSize:12,fontWeight:700,color:"#fbbf24",letterSpacing:1,textTransform:"uppercase"}}>Extra Expenses — {MONTHS[selMonth]} Only</h4>
-        <table><tbody>
-          {(customMonthlyExp[selMonth]||[]).map((e,i)=>(<tr key={e.id} style={{background:i%2===0?"#0a0f1880":"transparent"}}>
-            <ETCell value={e.name} onChange={v=>updateMonthlyExp(selMonth,e.id,"name",v)}/>
-            <ECell value={e.amount} onChange={v=>updateMonthlyExp(selMonth,e.id,"amount",v)} color="#fbbf24" bold/>
-            <td style={{padding:4,borderBottom:"1px solid #1e2a3a"}}><DelBtn onClick={()=>delMonthlyExp(selMonth,e.id)}/></td>
-          </tr>))}
-          <tr style={{background:"#fbbf2410"}}><Cell bold style={{color:"#fbbf24"}}>Total Extra</Cell><Cell align="right" bold style={{color:"#fbbf24"}}>{f(monthlyCustomExp(selMonth))}</Cell><td style={{borderBottom:"1px solid #1e2a3a"}}/></tr>
-        </tbody></table>
-        <AddBtn onClick={()=>addMonthlyExp(selMonth)} label={`Add ${MONTHS[selMonth]} Expense`}/>
-
-        {/* Debts this month */}
-        <h4 style={{margin:"20px 0 8px",fontSize:12,fontWeight:700,color:"#f87171",letterSpacing:1,textTransform:"uppercase"}}>Debt Payments — {MONTHS[selMonth]}</h4>
-        <table><tbody>{debts.map((d,i)=>{const v=d.schedule[selMonth];const ip=debtPaid[`${d.id}-${selMonth}`];const left=d.total-d.schedule.reduce((a,val,mi)=>a+(debtPaid[`${d.id}-${mi}`]?val:0),0);return(<tr key={d.id} style={{background:i%2===0?"#f8717108":"transparent",opacity:ip?.5:1}}>
-          <Cell style={{textDecoration:ip&&v>0?"line-through":"none"}}>{d.name}</Cell>
-          <Cell align="right" muted style={{fontSize:11}}>owes {f(left>0?left:0)}</Cell>
-          <td style={{padding:"4px 6px",borderBottom:"1px solid #1e2a3a",textAlign:"right"}}><input type="number" value={v} onChange={e=>updateDebtSchedule(d.id,selMonth,Number(e.target.value)||0)} style={{width:70,padding:"5px 6px",borderRadius:5,border:ip?"1px solid #4ade8040":"1px solid #2a3a4a",background:ip?"#4ade8010":v>0?"#f8717108":"transparent",color:ip?"#4ade80":v>0?"#f87171":"#3a4a5a",fontSize:13,fontWeight:700,textAlign:"right",fontFamily:"'Outfit',sans-serif",outline:"none"}}/></td>
-          <Cell align="center">{v>0&&<button onClick={()=>toggleDebtPaid(d.id,selMonth)} style={{padding:"4px 12px",borderRadius:6,cursor:"pointer",fontSize:10,fontWeight:700,fontFamily:"'Outfit',sans-serif",border:"none",background:ip?"#4ade8030":"#f8717130",color:ip?"#4ade80":"#f87171"}}>{ip?"✓ PAID":"MARK PAID"}</button>}</Cell>
-        </tr>);})}
-        <tr style={{background:"#f8717115"}}><Cell bold red>Total</Cell><Cell/><Cell align="right" red bold>{f(monthlyDebt(selMonth))}</Cell><Cell/></tr></tbody></table>
-        <div style={{marginTop:12,padding:12,background:"#0a0f18",borderRadius:8,border:"1px solid #1a2535",fontSize:12,color:"#64748b"}}>💡 Change any amount to reschedule. Reduce this month and add the balance to next month. Everything auto-saves and recalculates.</div>
+    {tab==="monthly"&&(<div style={{display:"flex",flexDirection:"column",gap:16}}>
+      <div style={{display:"flex",gap:4,flexWrap:"wrap"}}>{MONTHS.map((m,i)=><button key={m} onClick={()=>setSelMonth(i)} style={{padding:"8px 18px",borderRadius:8,border:`1px solid ${selMonth===i?C.gold:C.pb}`,cursor:"pointer",fontSize:12,fontWeight:700,fontFamily:"'Outfit',sans-serif",background:selMonth===i?`${C.gold}15`:C.panel,color:selMonth===i?C.gold:C.muted}}>{MO[i]}</button>)}</div>
+      <Panel><Heading>{MONTHS[selMonth]} 2026</Heading>
+        <div style={{display:"flex",gap:10,flexWrap:"wrap",marginBottom:20}}>{[{l:"Income",v:income(selMonth),c:C.green},{l:"Expenses",v:totalFixed+monthExtra(selMonth),c:C.muted},{l:"Debt",v:debtPmt(selMonth),c:C.red},{l:"Savings",v:savings[selMonth],c:C.purple},{l:"Net",v:net(selMonth),c:net(selMonth)>=0?C.green:C.red}].map((s,i)=>(<div key={i} style={{flex:1,minWidth:110,padding:"12px 14px",background:C.bg,borderRadius:8,borderLeft:`3px solid ${s.c}`}}><div style={{fontSize:10,fontWeight:700,color:C.muted,letterSpacing:1,textTransform:"uppercase"}}>{s.l}</div><div style={{fontSize:20,fontWeight:800,color:s.c,fontFamily:"'Cormorant Garamond',serif",marginTop:4}}>{f(s.v)}</div></div>))}</div>
+        <h4 style={{fontSize:11,fontWeight:700,color:C.muted,letterSpacing:1,textTransform:"uppercase",marginBottom:8}}>Fixed Expenses</h4>
+        <table><tbody>{expenses.map((e,i)=><tr key={e.id} style={{background:i%2===0?`${C.bg}80`:"transparent"}}><Td>{e.name}</Td><Td align="right" bold>{f(e.amount)}</Td></tr>)}</tbody></table>
+        <h4 style={{fontSize:11,fontWeight:700,color:C.gold,letterSpacing:1,textTransform:"uppercase",margin:"20px 0 8px"}}>Extra Expenses \u2014 {MONTHS[selMonth]}</h4>
+        <table><tbody>{(monthExtras[selMonth]||[]).map(e=>(<tr key={e.id}><td style={{padding:"4px 6px",borderBottom:`1px solid ${C.pb}`}}><Inp type="text" value={e.name} onChange={v=>updMonthExp(selMonth,e.id,"name",v)} placeholder="Name"/></td><td style={{padding:"4px 6px",borderBottom:`1px solid ${C.pb}`,width:100}}><Inp value={e.amount} onChange={v=>updMonthExp(selMonth,e.id,"amount",v)} color={C.gold}/></td><td style={{padding:4,borderBottom:`1px solid ${C.pb}`,width:40}}><Btn onClick={()=>delMonthExp(selMonth,e.id)} variant="sm" color={C.red}>{"\u2715"}</Btn></td></tr>))}</tbody></table>
+        <Btn onClick={()=>addMonthExp(selMonth)}>+ Add {MONTHS[selMonth]} Expense</Btn>
+        <h4 style={{fontSize:11,fontWeight:700,color:C.red,letterSpacing:1,textTransform:"uppercase",margin:"20px 0 8px"}}>Debt Payments \u2014 {MONTHS[selMonth]}</h4>
+        <table><tbody>{debts.map((d,i)=>{const v=d.schedule[selMonth];const ip=d.paid[selMonth];const left=d.total-d.schedule.reduce((a,val,mi)=>a+(d.paid[mi]?val:0),0);return(<tr key={d.id} style={{opacity:ip&&v>0?.4:1}}><Td style={{textDecoration:ip&&v>0?"line-through":"none"}}>{d.name}</Td><Td align="right" color={C.muted} style={{fontSize:11}}>owes {f(Math.max(left,0))}</Td><td style={{padding:"4px 6px",borderBottom:`1px solid ${C.pb}`,width:90}}><Inp value={v} onChange={val=>updDebtSchedule(d.id,selMonth,val)} color={v>0?C.red:C.dim}/></td><Td align="center">{v>0&&<Btn onClick={()=>togglePaid(d.id,selMonth)} variant="sm" color={ip?C.green:C.red}>{ip?"\u2713 PAID":"MARK PAID"}</Btn>}</Td></tr>)})}
+        <tr style={{background:`${C.red}10`}}><Td bold color={C.red}>Total</Td><Td/><Td align="right" bold color={C.red}>{f(debtPmt(selMonth))}</Td><Td/></tr></tbody></table>
+        <div style={{marginTop:12,padding:12,background:C.bg,borderRadius:8,border:`1px solid ${C.pb}`,fontSize:12,color:C.muted}}>Change any amount to reschedule. Reduce this month, add the balance to next month.</div>
       </Panel>
     </div>)}
 
-    {/* ═══ INCOME ═══ */}
-    {tab==="income"&&(<div className="fadeUp" style={{display:"flex",flexDirection:"column",gap:20}}>
-      <Panel glow="#4ade80"><SectionHead icon="◆" gold>Income Streams — Fully Editable</SectionHead>
-        <div style={{overflowX:"auto"}}><table><thead><tr><Cell head>Source</Cell>{MO.map(m=><Cell head align="center" key={m}>{m}</Cell>)}<Cell head align="right" style={{color:"#d4a843"}}>TOTAL</Cell><Cell head/></tr></thead>
-        <tbody>
-          <tr style={{background:"#4ade8008"}}><Cell bold green>💰 Salary</Cell>{MO.map((_,i)=><Cell align="center" green key={i}>{f(salaryRON)}</Cell>)}<Cell align="right" green bold>{f(salaryRON*10)}</Cell><Cell/></tr>
-          {["💼 2nd Job","🚀 Business","🔧 Side Hustles","📥 Collections"].map((label,si)=>(<tr key={si} style={{background:si%2===0?"#0a0f1880":"transparent"}}><Cell bold style={{color:["#c084fc","#fbbf24","#06b6d4","#60a5fa"][si]}}>{label}</Cell>{MO.map((_,mi)=>(<ECell key={mi} value={(extraIncome[mi]||[0,0,0,0])[si]} onChange={v=>updateExtra(mi,si,v)} color={["#c084fc","#fbbf24","#06b6d4","#60a5fa"][si]}/>))}<Cell align="right" bold>{f(extraIncome.reduce((s,r)=>s+(r[si]||0),0))}</Cell><Cell/></tr>))}
-          {customIncome.map(ci=>(<tr key={ci.id} style={{background:"#0a0f1880"}}><ETCell value={ci.name} onChange={v=>updateCustomIncomeName(ci.id,v)}/>{MO.map((_,mi)=>(<ECell key={mi} value={ci.amounts[mi]||0} onChange={v=>updateCustomIncomeAmt(ci.id,mi,v)} color="#d4a843"/>))}<Cell align="right" bold>{f(ci.amounts.reduce((a,b)=>a+b,0))}</Cell><td style={{padding:4,borderBottom:"1px solid #1e2a3a"}}><DelBtn onClick={()=>delCustomIncome(ci.id)}/></td></tr>))}
-          <tr style={{background:"#d4a84310"}}><Cell bold gold>◈ TOTAL</Cell>{MO.map((_,i)=><Cell align="center" gold bold key={i}>{f(monthlyIncome(i))}</Cell>)}<Cell align="right" gold bold>{f(annualIncome)}</Cell><Cell/></tr>
+    {tab==="income"&&(<div style={{display:"flex",flexDirection:"column",gap:16}}>
+      <Panel><Heading sub="Edit amounts \u2014 everything recalculates automatically">Income Streams</Heading><div style={{overflowX:"auto"}}><table><thead><tr><Td head>Source</Td>{MO.map(m=><Td head align="center" key={m}>{m}</Td>)}<Td head align="right">Total</Td><Td head/></tr></thead><tbody>
+        <tr style={{background:`${C.green}08`}}><Td bold color={C.green}>Salary</Td>{MO.map((_,i)=><Td align="center" color={C.green} key={i}>{f(salaryRON)}</Td>)}<Td align="right" bold color={C.green}>{f(salaryRON*MI)}</Td><Td/></tr>
+        {incomeStreams.map(s=>(<tr key={s.id}><td style={{padding:"4px 6px",borderBottom:`1px solid ${C.pb}`}}><Inp type="text" value={s.name} onChange={v=>updList(setIncomeStreams,s.id,"name",v)}/></td>{MO.map((_,mi)=><td key={mi} style={{padding:"3px 2px",borderBottom:`1px solid ${C.pb}`}}><Inp value={s.amounts[mi]||0} onChange={v=>updStreamAmt(s.id,mi,v)} w={65} color={C.gold}/></td>)}<Td align="right" bold>{f(s.amounts.reduce((a,b)=>a+b,0))}</Td><td style={{padding:4,borderBottom:`1px solid ${C.pb}`}}><Btn onClick={()=>delFromList(setIncomeStreams,s.id)} variant="sm" color={C.red}>{"\u2715"}</Btn></td></tr>))}
+        <tr style={{background:`${C.gold}08`}}><Td bold color={C.gold}>TOTAL</Td>{MO.map((_,i)=><Td align="center" bold color={C.gold} key={i}>{f(income(i))}</Td>)}<Td align="right" bold color={C.gold}>{f(annualIncome)}</Td><Td/></tr>
+      </tbody></table></div><Btn onClick={()=>addToList(setIncomeStreams,{id:uid(),name:"",amounts:Array(MI).fill(0)})}>+ Add Income Stream</Btn></Panel>
+    </div>)}
+
+    {tab==="debts"&&(<div style={{display:"flex",flexDirection:"column",gap:16}}>
+      <Panel><Heading sub="Edit amounts, move payments between months, mark as paid">Debt Schedule</Heading>
+        <div style={{display:"flex",gap:10,marginBottom:20,flexWrap:"wrap"}}><Stat label="Total Owed" value={f(totalDebt)} color={C.red}/><Stat label="Paid" value={f(totalPaid)} color={C.green}/><Stat label="Remaining" value={f(totalRemaining)} color={totalRemaining<=0?C.green:C.gold}/></div>
+        <div style={{overflowX:"auto"}}><table><thead><tr><Td head>Creditor</Td><Td head align="right">Owed</Td><Td head align="right" color={C.green}>Paid</Td><Td head align="right" color={C.gold}>Left</Td>{MO.map(m=><Td head align="center" key={m}>{m}</Td>)}<Td head>Deadline</Td><Td head/></tr></thead>
+        <tbody>{debts.map((d,i)=>{const paid=d.schedule.reduce((a,v,mi)=>a+(d.paid[mi]?v:0),0);const left=d.total-paid;const done=left<=0&&d.total>0;return(<tr key={d.id} style={{background:done?`${C.green}05`:i%2===0?`${C.bg}60`:"transparent"}}>
+          <td style={{padding:"4px 6px",borderBottom:`1px solid ${C.pb}`}}><Inp type="text" value={d.name} onChange={v=>updList(setDebts,d.id,"name",v)} style={{textDecoration:done?"line-through":"none",opacity:done?.5:1}}/></td>
+          <td style={{padding:"4px 6px",borderBottom:`1px solid ${C.pb}`,width:80}}><Inp value={d.total} onChange={v=>updList(setDebts,d.id,"total",v)} color={C.red}/></td>
+          <Td align="right" bold color={C.green}>{f(paid)}</Td>
+          <Td align="right" bold color={done?C.green:C.gold}>{done?"\u2713 CLEAR":f(left)}</Td>
+          {d.schedule.map((v,mi)=>(<td key={mi} style={{padding:"3px 2px",borderBottom:`1px solid ${C.pb}`,textAlign:"center"}}><div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:2}}><Inp value={v} onChange={val=>updDebtSchedule(d.id,mi,val)} w={58} color={d.paid[mi]?C.green:v>0?C.blue:C.dim} style={{border:d.paid[mi]?`1px solid ${C.green}40`:undefined,background:d.paid[mi]?`${C.green}10`:undefined}}/>{v>0&&<Btn onClick={()=>togglePaid(d.id,mi)} variant="sm" color={d.paid[mi]?C.green:C.muted}>{d.paid[mi]?"PAID \u2713":"MARK"}</Btn>}</div></td>))}
+          <td style={{padding:"4px 6px",borderBottom:`1px solid ${C.pb}`}}><Inp type="text" value={d.deadline} onChange={v=>updList(setDebts,d.id,"deadline",v)} w={90}/></td>
+          <td style={{padding:4,borderBottom:`1px solid ${C.pb}`}}><Btn onClick={()=>delFromList(setDebts,d.id)} variant="sm" color={C.red}>{"\u2715"}</Btn></td>
+        </tr>)})}
+        <tr style={{background:`${C.red}10`}}><Td bold color={C.red}>TOTAL</Td><Td align="right" bold color={C.red}>{f(totalDebt)}</Td><Td align="right" bold color={C.green}>{f(totalPaid)}</Td><Td align="right" bold color={C.gold}>{f(totalRemaining)}</Td>{MO.map((_,i)=>{const v=debts.reduce((s,d)=>s+d.schedule[i],0);return<Td key={i} align="center" bold color={C.red}>{v>0?f(v):"\u2014"}</Td>})}<Td/><Td/></tr>
         </tbody></table></div>
-        <AddBtn onClick={addCustomIncome} label="Add Income Stream"/>
+        <Btn onClick={()=>addToList(setDebts,{id:uid(),name:"",total:0,schedule:Array(MI).fill(0),deadline:"",paid:Array(MI).fill(false)})}>+ Add Debt</Btn>
+      </Panel>
+      <Panel style={{opacity:.7}}><Heading sub="Not in current budget">Future Debts \u2014 2027+</Heading>
+        <table><tbody>{futureDebts.map(d=>(<tr key={d.id}><td style={{padding:"4px 6px",borderBottom:`1px solid ${C.pb}`}}><Inp type="text" value={d.name} onChange={v=>updList(setFutureDebts,d.id,"name",v)}/></td><td style={{padding:"4px 6px",borderBottom:`1px solid ${C.pb}`,width:100}}><Inp value={d.amount} onChange={v=>updList(setFutureDebts,d.id,"amount",v)} color={C.muted}/></td><td style={{padding:"4px 6px",borderBottom:`1px solid ${C.pb}`}}><Inp type="text" value={d.notes} onChange={v=>updList(setFutureDebts,d.id,"notes",v)} placeholder="Notes"/></td><td style={{padding:4,borderBottom:`1px solid ${C.pb}`}}><Btn onClick={()=>delFromList(setFutureDebts,d.id)} variant="sm" color={C.red}>{"\u2715"}</Btn></td></tr>))}</tbody></table>
+        <Btn onClick={()=>addToList(setFutureDebts,{id:uid(),name:"",amount:0,notes:""})}>+ Add Future Debt</Btn>
       </Panel>
     </div>)}
 
-    {/* ═══ DEBTS ═══ */}
-    {tab==="debts"&&(<div className="fadeUp" style={{display:"flex",flexDirection:"column",gap:20}}>
-      <Panel glow="#f87171"><SectionHead icon="◇">Debt Repayment — Fully Editable</SectionHead>
-        <div style={{display:"flex",gap:12,marginBottom:20,flexWrap:"wrap"}}><StatBox icon="◇" label="Original" value={f(totalDebtOrig)} color="#f87171"/><StatBox icon="◈" label="Paid" value={f(totalDebtPaidSoFar)} color="#4ade80"/><StatBox icon="◆" label="Remaining" value={f(totalDebtRemaining)} color="#fbbf24"/></div>
-        <div style={{overflowX:"auto"}}><table><thead><tr><Cell head>Creditor</Cell><Cell head align="right">Owed</Cell><Cell head align="right" style={{color:"#4ade80"}}>Paid</Cell><Cell head align="right" style={{color:"#fbbf24"}}>Left</Cell>{MO.map(m=><Cell head align="center" key={m}>{m}</Cell>)}<Cell head>Deadline</Cell><Cell head/></tr></thead>
-        <tbody>{debts.map((d,i)=>{const paid=d.schedule.reduce((a,v,mi)=>a+(debtPaid[`${d.id}-${mi}`]?v:0),0);const scheduled=d.schedule.reduce((a,b)=>a+b,0);const left=d.total-paid;const done=left<=0&&d.total>0;const overScheduled=scheduled>d.total&&d.total>0;return(<tr key={d.id} style={{background:done?"#4ade8008":i%2===0?"#f8717105":"transparent"}}>
-          <ETCell value={d.name} onChange={v=>updateDebt(d.id,"name",v)}/>
-          <td style={{padding:"4px 6px",borderBottom:"1px solid #1e2a3a",textAlign:"right"}}><input type="number" value={d.total} onChange={e=>{const nv=Number(e.target.value)||0;updateDebt(d.id,"total",nv);}} style={{width:65,padding:"4px 6px",borderRadius:5,border:"1px solid #f8717140",background:"#f8717108",color:"#f87171",fontSize:12,fontWeight:700,fontFamily:"'Outfit',sans-serif",textAlign:"right",outline:"none"}}/></td>
-          <Cell align="right" green bold>{f(paid)}</Cell>
-          <Cell align="right" bold style={{color:done?"#4ade80":left<0?"#c084fc":"#fbbf24"}}>{done?"✓ CLEAR":f(left)}</Cell>
-          {d.schedule.map((v,mi)=>{const ip=debtPaid[`${d.id}-${mi}`];return(<td key={mi} style={{padding:"4px 2px",textAlign:"center",borderBottom:"1px solid #1e2a3a"}}><div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:2}}><input type="number" value={v} onChange={e=>updateDebtSchedule(d.id,mi,Number(e.target.value)||0)} style={{width:58,padding:"4px",borderRadius:4,border:ip?"1px solid #4ade8040":"1px solid #2a3a4a",background:ip?"#4ade8010":v>0?"#60a5fa08":"transparent",color:ip?"#4ade80":v>0?"#60a5fa":"#3a4a5a",fontSize:12,fontWeight:v>0?700:400,textAlign:"center",fontFamily:"'Outfit',sans-serif",outline:"none"}}/>{v>0&&<button onClick={()=>toggleDebtPaid(d.id,mi)} style={{padding:"1px 8px",borderRadius:3,border:"none",cursor:"pointer",fontSize:9,fontWeight:700,fontFamily:"'Outfit',sans-serif",background:ip?"#4ade8025":"#1a2535",color:ip?"#4ade80":"#64748b",letterSpacing:.5}}>{ip?"PAID ✓":"MARK PAID"}</button>}</div></td>);})}
-          <ETCell value={d.deadline} onChange={v=>updateDebt(d.id,"deadline",v)}/>
-          <td style={{padding:4,borderBottom:"1px solid #1e2a3a"}}><DelBtn onClick={()=>delDebt(d.id)}/></td>
-        </tr>);})}
-        <tr style={{background:"#f8717115"}}><Cell bold red>TOTAL</Cell><Cell align="right" red bold>{f(totalDebtOrig)}</Cell><Cell align="right" green bold>{f(totalDebtPaidSoFar)}</Cell><Cell align="right" bold style={{color:"#fbbf24"}}>{f(totalDebtRemaining)}</Cell>{MO.map((_,i)=>{const v=debts.reduce((s,d)=>s+d.schedule[i],0);return<Cell key={i} align="center" red bold>{v>0?f(v):"—"}</Cell>;})}
-        <Cell/><Cell/></tr>
-        </tbody></table></div>
-        <AddBtn onClick={addDebt} label="Add New Debt"/>
-      </Panel>
-      <Panel><SectionHead icon="◈">Elimination Timeline</SectionHead>
-        {MO.map((m,i)=>{const cum=debts.reduce((s,d)=>{let t=0;for(let j=0;j<=i;j++)t+=d.schedule[j];return s+t;},0);const pct=totalDebtOrig>0?(cum/totalDebtOrig)*100:0;return(<div key={m} style={{display:"flex",alignItems:"center",gap:12,marginBottom:8}}><span style={{width:36,fontSize:11,fontWeight:700,color:"#64748b"}}>{m}</span><div style={{flex:1}}><ProgressBar value={cum} max={totalDebtOrig} color={pct>=100?"#4ade80":"#d4a843"} h={8}/></div><span style={{width:50,fontSize:12,fontWeight:700,textAlign:"right",color:pct>=100?"#4ade80":"#d4a843"}}>{pct.toFixed(0)}%</span></div>);})}
-      </Panel>
-      <Panel style={{opacity:.6}}><SectionHead icon="◇">Future Debts — 2027+</SectionHead>{FUTURE_DEBTS.map((d,i)=>(<div key={i} style={{display:"flex",justifyContent:"space-between",padding:"8px 0",fontSize:13,color:"#64748b",borderBottom:"1px solid #1a2535"}}><span>{d.name}</span><span>{typeof d.amount==="number"?f(d.amount):d.amount}</span></div>))}</Panel>
+    {tab==="savings"&&(<div style={{display:"flex",flexDirection:"column",gap:16}}>
+      <Panel><Heading sub="Edit monthly targets">Savings Tracker</Heading><div style={{textAlign:"center",marginBottom:24}}><div style={{fontSize:44,fontWeight:800,fontFamily:"'Cormorant Garamond',serif",color:C.gold}}>{f(annualSavings)}</div><div style={{fontSize:12,color:C.muted}}>Annual Target</div></div>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(120px,1fr))",gap:10}}>{MONTHS.map((m,i)=>(<div key={m} style={{padding:14,borderRadius:10,textAlign:"center",background:savings[i]>0?`${C.gold}08`:C.bg,border:`1px solid ${savings[i]>0?C.gd:C.pb}`}}><div style={{fontSize:11,fontWeight:700,color:C.muted,marginBottom:8}}>{MO[i]}</div><Inp value={savings[i]} onChange={v=>updSaving(i,v)} w={80} color={C.gold}/><div style={{fontSize:10,color:C.dim,marginTop:6}}>Cum: {f(cumSaved(i))}</div></div>))}</div></Panel>
+      <Panel><Heading>Growth Chart</Heading><div style={{display:"flex",alignItems:"flex-end",height:160,gap:8}}>{MONTHS.map((m,i)=>{const c=cumSaved(i);const mx=cumSaved(MI-1);return(<div key={m} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"flex-end",height:"100%"}}><div style={{fontSize:9,fontWeight:700,color:C.gold,marginBottom:4}}>{f(c)}</div><div style={{width:"100%",background:C.gold,borderRadius:"4px 4px 0 0",height:`${mx>0?(c/mx)*70:0}%`,minHeight:c>0?3:0,transition:"height .5s ease"}}/><span style={{fontSize:10,fontWeight:700,color:C.muted,marginTop:6}}>{MO[i]}</span></div>)})}</div></Panel>
     </div>)}
 
-    {/* ═══ SAVINGS ═══ */}
-    {tab==="savings"&&(<div className="fadeUp" style={{display:"flex",flexDirection:"column",gap:20}}>
-      <Panel glow="#c084fc"><SectionHead icon="◈" gold>Savings — Editable Targets</SectionHead>
-        <div style={{textAlign:"center",margin:"8px 0 24px"}}><div style={{fontSize:48,fontWeight:800,fontFamily:"'Cormorant Garamond',serif",color:"#d4a843"}}>{f(annualSavings)}</div><div style={{fontSize:12,color:"#64748b"}}>Annual target</div></div>
-        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(120px,1fr))",gap:10}}>{MONTHS.map((m,i)=>(<div key={m} style={{padding:16,borderRadius:10,textAlign:"center",background:savings[i]>0?"#d4a84308":"#0a0f18",border:`1px solid ${savings[i]>0?"#d4a84330":"#1a2535"}`}}><div style={{fontSize:11,fontWeight:700,color:"#64748b",marginBottom:8}}>{MO[i]}</div><input type="number" value={savings[i]} onChange={e=>updateSaving(i,Number(e.target.value)||0)} style={{width:80,padding:"5px 8px",borderRadius:6,border:"1px solid #d4a84350",background:"#d4a84312",color:"#d4a843",fontSize:13,fontWeight:700,fontFamily:"'Outfit',sans-serif",textAlign:"right",outline:"none"}}/><div style={{fontSize:10,color:"#4a5568",marginTop:6}}>Cum: {f(cumSaved(i))}</div></div>))}</div>
-      </Panel>
-      <Panel><SectionHead icon="◆">Cumulative Growth</SectionHead>
-        <div style={{display:"flex",alignItems:"flex-end",height:180,gap:8,padding:"0 4px"}}>{MONTHS.map((m,i)=>{const cum=cumSaved(i);const mx=cumSaved(9);return(<div key={m} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"flex-end",height:"100%"}}><div style={{fontSize:9,fontWeight:700,color:"#d4a843",marginBottom:4}}>{f(cum)}</div><div style={{width:"100%",background:"linear-gradient(180deg,#d4a843,#b8942f80)",borderRadius:"6px 6px 0 0",height:`${mx>0?(cum/mx)*75:0}%`,minHeight:cum>0?4:0,transition:"height .6s cubic-bezier(.4,0,.2,1)"}}/><span style={{fontSize:10,fontWeight:700,color:"#64748b",marginTop:6}}>{MO[i]}</span></div>);})}</div>
-      </Panel>
-      <Panel><SectionHead icon="◇">Major Planned Expenses</SectionHead><table><thead><tr><Cell head>Expense</Cell><Cell head align="right">Cost</Cell><Cell head>Target</Cell></tr></thead><tbody>{MAJOR_NEEDS.map((n,i)=>{const cost=n.eur?n.eur*rates.EUR:n.ron;return(<tr key={i} style={{background:i%2===0?"#0a0f1860":"transparent"}}><Cell bold>{n.name}</Cell><Cell align="right" gold>{f(cost)}</Cell><Cell muted>{n.target}</Cell></tr>);})}</tbody></table></Panel>
+    {tab==="owed"&&(<div style={{display:"flex",flexDirection:"column",gap:16}}>
+      <Panel><Heading sub="Track money people owe you">Money Owed to Me</Heading><div style={{textAlign:"center",marginBottom:20}}><div style={{fontSize:40,fontWeight:800,fontFamily:"'Cormorant Garamond',serif",color:C.green}}>{f(totalOwed)}</div><div style={{fontSize:12,color:C.muted}}>Total Receivable</div></div>
+        <table><thead><tr><Td head>Person</Td><Td head align="right">Amount</Td><Td head>Notes</Td><Td head>Status</Td><Td head/></tr></thead><tbody>{owed.map((o,i)=>(<tr key={o.id} style={{background:i%2===0?`${C.bg}60`:"transparent",opacity:o.status==="Collected"?.4:1}}><td style={{padding:"4px 6px",borderBottom:`1px solid ${C.pb}`}}><Inp type="text" value={o.name} onChange={v=>updList(setOwed,o.id,"name",v)}/></td><td style={{padding:"4px 6px",borderBottom:`1px solid ${C.pb}`,width:100}}><Inp value={o.amount} onChange={v=>updList(setOwed,o.id,"amount",v)} color={C.green}/></td><td style={{padding:"4px 6px",borderBottom:`1px solid ${C.pb}`}}><Inp type="text" value={o.notes||""} onChange={v=>updList(setOwed,o.id,"notes",v)} placeholder="Notes"/></td><td style={{padding:"4px 6px",borderBottom:`1px solid ${C.pb}`,width:110}}><select value={o.status} onChange={e=>updList(setOwed,o.id,"status",e.target.value)} style={{padding:"6px 8px",borderRadius:6,border:`1px solid ${C.dim}`,background:C.bg,fontSize:11,fontWeight:700,fontFamily:"'Outfit',sans-serif",cursor:"pointer",outline:"none",color:o.status==="Collected"?C.green:o.status==="Partial"?C.gold:C.muted,width:"100%"}}><option>Pending</option><option>Partial</option><option>Collected</option></select></td><td style={{padding:4,borderBottom:`1px solid ${C.pb}`}}><Btn onClick={()=>delFromList(setOwed,o.id)} variant="sm" color={C.red}>{"\u2715"}</Btn></td></tr>))}</tbody></table>
+        <Btn onClick={()=>addToList(setOwed,{id:uid(),name:"",amount:0,status:"Pending",notes:""})}>+ Add Person</Btn></Panel>
     </div>)}
 
-    {/* ═══ ACTIONS ═══ */}
-    {tab==="actions"&&(<div className="fadeUp" style={{display:"flex",flexDirection:"column",gap:20}}>
-      <Panel glow="#d4a843"><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}><SectionHead icon="◉" gold>Action Plan</SectionHead><div style={{fontSize:28,fontWeight:800,fontFamily:"'Cormorant Garamond',serif",color:"#d4a843"}}>{doneActions}/{allActions.length}</div></div><ProgressBar value={doneActions} max={allActions.length} color="#d4a843" h={10}/></Panel>
-      {[{phase:1,title:"Phase 1 · Immediate",c:"#f87171"},{phase:2,title:"Phase 2 · Mid-Year",c:"#fbbf24"},{phase:3,title:"Phase 3 · Freedom",c:"#4ade80"}].map(p=>(<Panel key={p.phase}><h3 style={{margin:"0 0 16px",fontSize:15,fontWeight:700,color:p.c}}>{p.title}</h3>
-        {allActions.filter(a=>a.phase===p.phase).map(a=>{const st=actionStatus[a.id]||"Not Started";const cs=catStyle[a.cat]||catStyle.Admin;return(<div key={a.id} style={{display:"flex",gap:12,alignItems:"center",padding:"10px 0",borderBottom:"1px solid #1a2535",flexWrap:"wrap"}}><span style={{fontSize:14,width:24,textAlign:"center"}}>{a.p}</span><div style={{flex:1,minWidth:200}}><div style={{fontSize:13,fontWeight:600,opacity:st==="Done"?.4:1,textDecoration:st==="Done"?"line-through":"none"}}>{a.task}</div><div style={{display:"flex",gap:6,marginTop:5}}><Badge bg={cs.bg} tx={cs.tx}>{a.cat}</Badge><Badge bg="#1a2535" tx="#64748b">{a.dl}</Badge></div></div><StatusSelect value={st} onChange={v=>setActionStatus(prev=>({...prev,[a.id]:v}))}/></div>);})}
-        <AddBtn onClick={()=>addAction(p.phase)} label="Add Task"/>
-      </Panel>))}
-    </div>)}
-
-    {/* ═══ SETTINGS ═══ */}
-    {tab==="settings"&&(<div className="fadeUp" style={{display:"flex",flexDirection:"column",gap:20}}>
-      <Panel glow="#d4a843"><div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",flexWrap:"wrap",gap:12,marginBottom:16}}><SectionHead icon="◆" gold>Settings & Exchange Rates</SectionHead><div style={{display:"flex",gap:8,alignItems:"center"}}><div style={{fontSize:11,color:"#4ade80",fontWeight:600}}>✓ Auto-saved</div>{showResetConfirm?<div style={{display:"flex",gap:6,alignItems:"center"}}><span style={{fontSize:11,color:"#f87171"}}>Reset ALL data?</span><button onClick={handleReset} style={{padding:"4px 12px",borderRadius:6,border:"none",background:"#f87171",color:"#fff",fontSize:11,fontWeight:700,fontFamily:"'Outfit',sans-serif",cursor:"pointer"}}>Yes, Reset</button><button onClick={()=>setShowResetConfirm(false)} style={{padding:"4px 12px",borderRadius:6,border:"1px solid #2a3a4a",background:"transparent",color:"#64748b",fontSize:11,fontWeight:700,fontFamily:"'Outfit',sans-serif",cursor:"pointer"}}>Cancel</button></div>:<button onClick={()=>setShowResetConfirm(true)} style={{padding:"4px 12px",borderRadius:6,border:"1px solid #2a3a4a",background:"transparent",color:"#64748b",fontSize:11,fontWeight:700,fontFamily:"'Outfit',sans-serif",cursor:"pointer"}}>Reset to Defaults</button>}</div></div>
-        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(280px,1fr))",gap:20}}>
-          <div><h4 style={{margin:"0 0 12px",fontSize:12,fontWeight:700,color:"#d4a843",letterSpacing:1,textTransform:"uppercase"}}>Exchange Rates</h4>{[["EUR",rates.EUR],["USD",rates.USD],["GBP",rates.GBP]].map(([c,v])=>(<div key={c} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 0",borderBottom:"1px solid #1a2535"}}><span style={{fontWeight:600}}>1 {c} =</span><div style={{display:"flex",alignItems:"center",gap:4}}><input type="number" value={v} onChange={e=>setRates(p=>({...p,[c]:Number(e.target.value)||1}))} style={{width:90,padding:"5px 8px",borderRadius:6,border:"1px solid #d4a84350",background:"#d4a84312",color:"#d4a843",fontSize:13,fontWeight:700,fontFamily:"'Outfit',sans-serif",textAlign:"right",outline:"none"}}/><span style={{fontSize:12,color:"#64748b"}}>RON</span></div></div>))}</div>
-          <div><h4 style={{margin:"0 0 12px",fontSize:12,fontWeight:700,color:"#d4a843",letterSpacing:1,textTransform:"uppercase"}}>Primary Income</h4><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 0",borderBottom:"1px solid #1a2535"}}><span style={{fontWeight:600}}>Salary (GBP)</span><input type="number" value={salaryGBP} onChange={e=>setSalaryGBP(Number(e.target.value)||0)} style={{width:100,padding:"5px 8px",borderRadius:6,border:"1px solid #d4a84350",background:"#d4a84312",color:"#d4a843",fontSize:13,fontWeight:700,fontFamily:"'Outfit',sans-serif",textAlign:"right",outline:"none"}}/></div><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 0"}}><span style={{fontWeight:600}}>= RON</span><span style={{fontWeight:800,color:"#4ade80",fontSize:16}}>{fmtN(salaryRON,"RON",rates)}</span></div></div>
-        </div>
-      </Panel>
-      <Panel><SectionHead icon="◇">Monthly Fixed Expenses — Editable</SectionHead>
-        <table><thead><tr><Cell head>Expense</Cell><Cell head align="right">Amount (RON)</Cell><Cell head align="right">{cur}</Cell><Cell head/></tr></thead><tbody>
-        {expenses.map((e,i)=>(<tr key={e.id} style={{background:i%2===0?"#0a0f1860":"transparent"}}>
-          <ETCell value={e.name} onChange={v=>updateExp(e.id,"name",v)}/>
-          <ECell value={e.amount} onChange={v=>updateExp(e.id,"amount",v)} color="#d4a843" bold/>
-          <Cell align="right" muted>{f(e.amount)}</Cell>
-          <td style={{padding:4,borderBottom:"1px solid #1e2a3a"}}><DelBtn onClick={()=>delExpense(e.id)}/></td>
-        </tr>))}
-        <tr style={{background:"#f8717110"}}><Cell bold red>TOTAL</Cell><Cell align="right" red bold>{fmtN(totalFixed,"RON",rates)}</Cell><Cell align="right" red bold>{f(totalFixed)}</Cell><Cell/></tr>
-        <tr style={{background:"#4ade8010"}}><Cell bold green>AVAILABLE</Cell><Cell align="right" green bold>{fmtN(salaryRON-totalFixed,"RON",rates)}</Cell><Cell align="right" green bold>{f(salaryRON-totalFixed)}</Cell><Cell/></tr>
-        </tbody></table>
-        <AddBtn onClick={addExpense} label="Add Expense"/>
+    {tab==="plans"&&(<div style={{display:"flex",flexDirection:"column",gap:16}}>
+      <Panel><Heading sub="Track major planned expenses">Major Planned Expenses</Heading>
+        <table><thead><tr><Td head>Expense</Td><Td head align="right">Cost (RON)</Td><Td head align="right">{cur}</Td><Td head>Target</Td><Td head>Status</Td><Td head>Notes</Td><Td head/></tr></thead><tbody>{majorPlans.map((p,i)=>(<tr key={p.id} style={{background:i%2===0?`${C.bg}60`:"transparent",opacity:p.status==="Done"?.4:1}}>
+          <td style={{padding:"4px 6px",borderBottom:`1px solid ${C.pb}`}}><Inp type="text" value={p.name} onChange={v=>updList(setMajorPlans,p.id,"name",v)}/></td>
+          <td style={{padding:"4px 6px",borderBottom:`1px solid ${C.pb}`,width:100}}><Inp value={p.amount} onChange={v=>updList(setMajorPlans,p.id,"amount",v)} color={C.gold}/></td>
+          <Td align="right" color={C.muted}>{f(p.amount)}</Td>
+          <td style={{padding:"4px 6px",borderBottom:`1px solid ${C.pb}`}}><Inp type="text" value={p.target} onChange={v=>updList(setMajorPlans,p.id,"target",v)}/></td>
+          <td style={{padding:"4px 6px",borderBottom:`1px solid ${C.pb}`,width:120}}><select value={p.status} onChange={e=>updList(setMajorPlans,p.id,"status",e.target.value)} style={{padding:"6px 8px",borderRadius:6,border:`1px solid ${C.dim}`,background:C.bg,fontSize:11,fontWeight:700,fontFamily:"'Outfit',sans-serif",cursor:"pointer",outline:"none",color:p.status==="Done"?C.green:p.status==="In Progress"?C.gold:C.muted,width:"100%"}}><option>Not Started</option><option>In Progress</option><option>Done</option></select></td>
+          <td style={{padding:"4px 6px",borderBottom:`1px solid ${C.pb}`}}><Inp type="text" value={p.notes||""} onChange={v=>updList(setMajorPlans,p.id,"notes",v)} placeholder="Notes"/></td>
+          <td style={{padding:4,borderBottom:`1px solid ${C.pb}`}}><Btn onClick={()=>delFromList(setMajorPlans,p.id)} variant="sm" color={C.red}>{"\u2715"}</Btn></td></tr>))}</tbody></table>
+        <div style={{marginTop:12,display:"flex",justifyContent:"space-between",alignItems:"center"}}><Btn onClick={()=>addToList(setMajorPlans,{id:uid(),name:"",amount:0,target:"",status:"Not Started",notes:""})}>+ Add Planned Expense</Btn><div style={{fontSize:13,fontWeight:700,color:C.gold}}>Total: {f(majorPlans.reduce((s,p)=>s+p.amount,0))}</div></div>
       </Panel>
     </div>)}
 
-    {/* ═══ ADVICE ═══ */}
-    {tab==="advice"&&(<div className="fadeUp" style={{display:"flex",flexDirection:"column",gap:20}}>
-      {[{t:"⚠️ Crunch Months",c:"#f87171",items:["March: 5,269 RON debt vs ~5,196 available — tiny 73 gap.","May: 5,550 RON debt — 354 gap covered by April's surplus.","Key: Don't spend April's surplus. It funds May."]},{t:"◈ Debt Strategy",c:"#d4a843",items:["March: Clear 5 debts — Awede, A, Vivian, PhD, Omotolani 1/2.","April: 5 payments. Stay disciplined.","May: David 4,500. After this, only Vivian remains.","July: Final payment. DEBT-FREE."]},{t:"💼 Income Streams",c:"#c084fc",items:["2nd Job at 2,000/mo: Debt-free by June.","Business (May/Jun): Reinvest 3 months, then draw 1,000+.","Collections: Emelda's 3,240 = one full month of debt."]},{t:"🎓 Work Permit & School",c:"#fbbf24",items:["Work Permit (€500 ≈ 2,547 RON): Fund from June surplus.","School Fees (33,105): At 2,000/mo = ~17 months.","Priority: Debt → Emergency → Permit → School."]},{t:"◈ Financial Freedom",c:"#4ade80",items:["Step 1 (Mar–Jul): Eliminate all 14,954 RON debt.","Step 2 (Aug–Dec): Build emergency fund.","Step 3 (2027): Grow to 3-month fund.","Step 4: Start investing. Golden Rule: Pay yourself first."]}].map((s,i)=>(<Panel key={i} glow={s.c}><h3 style={{margin:"0 0 16px",fontSize:17,fontWeight:700,color:s.c,fontFamily:"'Cormorant Garamond',serif"}}>{s.t}</h3>{s.items.map((item,j)=>(<div key={j} style={{padding:"8px 0 8px 16px",borderLeft:`2px solid ${s.c}30`,marginBottom:6,fontSize:13,lineHeight:1.7,color:"#c8c4bc"}}>{item}</div>))}</Panel>))}
+    {tab==="actions"&&(<div style={{display:"flex",flexDirection:"column",gap:16}}>
+      <Panel><Heading sub="Auto-generated from debts and collections">Action Plan</Heading>
+        <div style={{display:"flex",gap:10,marginBottom:20}}><Stat label="Total" value={actions.length} color={C.gold}/><Stat label="Done" value={actions.filter(a=>a.status==="Done").length} color={C.green}/><Stat label="Pending" value={actions.filter(a=>a.status==="Pending").length} color={C.red}/></div>
+        <Bar value={actions.filter(a=>a.status==="Done").length} max={actions.length} color={C.green} h={8}/>
+        <div style={{marginTop:20}}>{actions.map(a=>(<div key={a.id} style={{display:"flex",gap:12,alignItems:"center",padding:"10px 0",borderBottom:`1px solid ${C.pb}`,opacity:a.status==="Done"?.4:1}}><div style={{width:8,height:8,borderRadius:"50%",background:a.status==="Done"?C.green:a.status==="In Progress"?C.gold:C.red,flexShrink:0}}/><div style={{flex:1}}><div style={{fontSize:13,fontWeight:600,textDecoration:a.status==="Done"?"line-through":"none"}}>{a.task}</div><div style={{display:"flex",gap:6,marginTop:4}}><Badge color={C.blue}>{a.month}</Badge><Badge color={a.status==="Done"?C.green:C.muted}>{a.status}</Badge></div></div></div>))}</div>
+        {actions.length===0&&<div style={{textAlign:"center",padding:40,color:C.muted}}>No active debts or pending collections.</div>}
+      </Panel>
     </div>)}
 
-    </div>
-    <div style={{textAlign:"center",padding:"20px 32px 32px",borderTop:"1px solid #1a2535"}}><div style={{fontSize:10,color:"#3a3a3a",letterSpacing:2,textTransform:"uppercase"}}>Annual Budget Planner 2026 · Auto-saved to this device</div></div>
+    {tab==="settings"&&(<div style={{display:"flex",flexDirection:"column",gap:16}}>
+      <Panel><Heading sub="Changes apply across every tab" right={<div style={{display:"flex",gap:8,alignItems:"center"}}><span style={{fontSize:11,color:C.green,fontWeight:600}}>{"\u2713"} Auto-saved</span>{resetConfirm?<div style={{display:"flex",gap:6}}><Btn onClick={handleReset} variant="filled" color={C.red} style={{padding:"4px 12px",fontSize:11}}>Yes, Reset</Btn><Btn onClick={()=>setResetConfirm(false)} variant="sm">Cancel</Btn></div>:<Btn onClick={()=>setResetConfirm(true)} variant="sm" color={C.muted}>Reset to Defaults</Btn>}</div>}>Settings</Heading>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(300px,1fr))",gap:20}}>
+          <div><h4 style={{fontSize:11,fontWeight:700,color:C.gold,letterSpacing:1,textTransform:"uppercase",marginBottom:12}}>Exchange Rates (1 unit = RON)</h4>{["EUR","USD","GBP"].map(c=>(<div key={c} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 0",borderBottom:`1px solid ${C.pb}`}}><span style={{fontWeight:600}}>1 {c}</span><Inp value={rates[c]} onChange={v=>setRates(p=>({...p,[c]:v||1}))} w={100} color={C.gold}/></div>))}</div>
+          <div><h4 style={{fontSize:11,fontWeight:700,color:C.gold,letterSpacing:1,textTransform:"uppercase",marginBottom:12}}>Primary Income</h4><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 0",borderBottom:`1px solid ${C.pb}`}}><span style={{fontWeight:600}}>Salary (GBP)</span><Inp value={salaryGBP} onChange={setSalaryGBP} w={110} color={C.gold}/></div><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"12px 0"}}><span style={{fontWeight:600}}>= RON</span><span style={{fontWeight:800,color:C.green,fontSize:18}}>{fmt(salaryRON,"RON",rates)}</span></div></div>
+        </div></Panel>
+      <Panel><Heading sub="Apply to every month">Fixed Monthly Expenses</Heading>
+        <table><thead><tr><Td head>Expense</Td><Td head align="right">Amount (RON)</Td><Td head align="right">{cur}</Td><Td head/></tr></thead><tbody>
+        {expenses.map((e,i)=>(<tr key={e.id} style={{background:i%2===0?`${C.bg}60`:"transparent"}}><td style={{padding:"4px 6px",borderBottom:`1px solid ${C.pb}`}}><Inp type="text" value={e.name} onChange={v=>updList(setExpenses,e.id,"name",v)}/></td><td style={{padding:"4px 6px",borderBottom:`1px solid ${C.pb}`,width:100}}><Inp value={e.amount} onChange={v=>updList(setExpenses,e.id,"amount",v)} color={C.gold}/></td><Td align="right" color={C.muted}>{f(e.amount)}</Td><td style={{padding:4,borderBottom:`1px solid ${C.pb}`}}><Btn onClick={()=>delFromList(setExpenses,e.id)} variant="sm" color={C.red}>{"\u2715"}</Btn></td></tr>))}
+        <tr style={{background:`${C.red}10`}}><Td bold color={C.red}>TOTAL</Td><Td align="right" bold color={C.red}>{fmt(totalFixed,"RON",rates)}</Td><Td align="right" bold color={C.red}>{f(totalFixed)}</Td><Td/></tr>
+        <tr style={{background:`${C.green}10`}}><Td bold color={C.green}>AVAILABLE</Td><Td align="right" bold color={C.green}>{fmt(salaryRON-totalFixed,"RON",rates)}</Td><Td align="right" bold color={C.green}>{f(salaryRON-totalFixed)}</Td><Td/></tr>
+        </tbody></table><Btn onClick={()=>addToList(setExpenses,{id:uid(),name:"",amount:0})}>+ Add Expense</Btn></Panel>
+    </div>)}
+
+    </main>
+    <footer style={{textAlign:"center",padding:"16px 24px 28px",borderTop:`1px solid ${C.pb}`}}><div style={{fontSize:9,color:C.dim,letterSpacing:2,textTransform:"uppercase"}}>Budget Planner 2026 \u00b7 Auto-saved \u00b7 Private to this device</div></footer>
   </div>);
 }
